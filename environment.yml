@@ -1,0 +1,67 @@
+name: flappy
+channels:
+  - conda-forge
+  - cogsci
+  - defaults
+dependencies:
+  - absl-py=0.5.0=py_0
+  - astor=0.7.1=py_0
+  - blas=1.0=mkl
+  - ca-certificates=2018.11.29=ha4d7672_0
+  - certifi=2018.8.24=py35_1001
+  - gast=0.2.2=py_0
+  - grpcio=1.14.1=py35he089993_0
+  - h5py=2.8.0=py35hb24199d_2
+  - hdf5=1.10.2=he51fdeb_2
+  - icc_rt=2019.0.0=h0cc432a_1
+  - icu=58.2=vc14_0
+  - intel-openmp=2019.1=144
+  - jpeg=9c=hfa6e2cd_1001
+  - keras=2.1.6=py35_0
+  - keras-applications=1.0.7=py_0
+  - keras-preprocessing=1.0.9=py_0
+  - libgpuarray=0.7.6=hfa6e2cd_1003
+  - libpng=1.6.36=h7602738_1000
+  - libprotobuf=3.6.0=h1a1b453_1000
+  - libtiff=4.0.10=h36446d0_1001
+  - libwebp=0.5.2=7
+  - lz4=1.1.0=py35h37e296c_1
+  - lz4-c=1.8.1.2=vc14_0
+  - mako=1.0.7=py_1
+  - markdown=2.6.11=py_0
+  - markupsafe=1.0=py35hfa6e2cd_1
+  - mkl=2018.0.3=1
+  - mkl_fft=1.0.9=py35_0
+  - mkl_random=1.0.1=py35_0
+  - numpy=1.15.2=py35ha559c80_0
+  - numpy-base=1.15.2=py35h8128ebf_0
+  - opencv=3.4.3=py35h597e314_200
+  - openssl=1.0.2r=hfa6e2cd_0
+  - pip=18.0=py35_1001
+  - protobuf=3.6.0=py35he025d50_0
+  - pygame=1.9.2a0=py35_0
+  - pygpu=0.7.6=py35_0
+  - pyreadline=2.1=py35_1000
+  - python=3.5.5=he025d50_2
+  - pyyaml=3.13=py35hfa6e2cd_1
+  - qt=5.6.2=h2639256_8
+  - scikit-learn=0.20.0=py35heebcf9a_1
+  - scipy=1.1.0=py35h4f6bf74_1
+  - setuptools=40.4.3=py35_0
+  - six=1.11.0=py35_1
+  - sqlite=3.26.0=hfa6e2cd_1000
+  - tensorboard=1.10.0=py35_0
+  - tensorflow=1.10.0=py35_0
+  - termcolor=1.1.0=py_2
+  - theano=1.0.3=py35_0
+  - vc=14=0
+  - vs2015_runtime=14.0.25420=0
+  - werkzeug=0.14.1=py_0
+  - wheel=0.32.0=py35_1000
+  - wincertstore=0.2=py35_1002
+  - xz=5.2.4=h2fa13f4_1001
+  - yaml=0.1.7=hfa6e2cd_1001
+  - zlib=1.2.11=h2fa13f4_1004
+  - zstd=1.3.8=h1b99e65_1002
+prefix: D:\Anaconda3\envs\flappy
+
