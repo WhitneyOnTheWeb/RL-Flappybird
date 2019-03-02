@@ -1,8 +1,8 @@
 ## REQUIREMENTS
 Visual Studio Code will be used as the IDE for this project, though most any text editor will work for reproducing it. The project has the following dependencies:
 
-  -  Git
-  -  Python 3 environment with the following packages installed:
+-  Git
+-  Python 3 environment with the following packages installed:
     -  PyGame; open source game development platform for Python
     -  Scipy; open source scientific computing package suite for Python
     -  Scikit-Learn; popular machine learning library for Python
@@ -12,9 +12,9 @@ Visual Studio Code will be used as the IDE for this project, though most any tex
 
 Installing a Python distribution and creating the environment will be done through Anaconda. To automatically create a flappy environment preconfigured with the correct dependencies for this project:
 
-  1.	Download the requirements file `[environment.yml](https://raw.githubusercontent.com/WhitneyOnTheWeb/RL-Flappybird/master/environment.yml)` to a `{path}` on your system
-  2.	Edit  environment.yml so prefix matches your Anaconda `\envs` path
-  3.	From Anaconda Prompt run:
+1.	Download the requirements file `[environment.yml](https://raw.githubusercontent.com/WhitneyOnTheWeb/RL-Flappybird/master/environment.yml)` to a `{path}` on your system
+2.	Edit  environment.yml so prefix matches your Anaconda `\envs` path
+3.	From Anaconda Prompt run:
     `conda env create -f {path}\environment.yml`
 
 # EMULATION#
