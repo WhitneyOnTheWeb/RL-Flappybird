@@ -12,7 +12,7 @@ Visual Studio Code will be used as the IDE for this project, though most any tex
 
 Installing a Python distribution and creating the environment will be done through Anaconda. To automatically create a flappy environment preconfigured with the correct dependencies for this project:
 
-1.	Download the requirements file `[environment.yml](https://raw.githubusercontent.com/WhitneyOnTheWeb/RL-Flappybird/master/environment.yml)` to a `{path}` on your system
+1.	Download the requirements file [environment.yml](https://raw.githubusercontent.com/WhitneyOnTheWeb/RL-Flappybird/master/environment.yml) to a `{path}` on your system
 2.	Edit  environment.yml so prefix matches your Anaconda `\envs` path
 3.	From Anaconda Prompt run:
     `conda env create -f {path}\environment.yml`
