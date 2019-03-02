@@ -18,7 +18,7 @@ Installing a Python distribution and creating the environment will be done throu
 
     `conda env create -f {path}\environment.yml`
 
-# EMULATION
+## EMULATION
 There are several widely available opensource codebases in existence that emulate Flappy Bird and provide all necessary assets. This project will utilize a popular clone FlapPy Bird , built in Python using pygame and available on GitHub under the MIT License , which provides all functionality and should require relatively little code modification to make it suitable for an RL agent.
 
 1.	From a command terminal cd to the project directory and run:
