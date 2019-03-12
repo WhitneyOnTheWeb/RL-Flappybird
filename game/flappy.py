@@ -54,7 +54,7 @@ PLAYER_INDEX_GEN = cycle([0, 1, 2, 1])
 
 class GameState():
     def __init__(self):
-        self.score     = self.playerIndex = self.loopiter = 0
+        self.score = self.playerIndex = self.loopiter = 0
         self.playerx   = int(SCREEN_W * 0.2)
         self.playery   = int((SCREEN_H - PLAYER_H) / 2)
         self.basex     = 0
@@ -85,180 +85,181 @@ class GameState():
         self.playerFlapAcc =  -9    # players speed on flapping
         self.playerFlapped =  False # True when player flaps
 
-def step(self, actions):
-    pygame.event.pump()
+    def step(self, action):
+        pygame.event.pump()
 
-    # Reward continued play
-    reward = 0.1
-    terminal = False
+        # Reward continued play
+        reward = 0.1
+        terminal = False
 
-    # Player Movement----------------------------------------------------------
-    # actions[0] == 1:  Don't Flap
-    # actions[1] == 1:  Flap
-    if sum(actions) != 1:
-        raise ValueError('More than 1 action!')
+        # Player Movement----------------------------------------------------------
+        # action[0] == 1:  Don't Flap
+        # action[1] == 1:  Flap
+        if sum(action) != 1:
+            raise ValueError('More than 1 action!')
 
-    if actions[1]:
-        if self.playery > -2 * PLAYER_H:
-            self.playerVelY = self.playerFlapAcc
-            self.playerFlapped = True
+        if action[1]:
+            if self.playery > -2 * PLAYER_H:
+                self.playerVelY = self.playerFlapAcc
+                self.playerFlapped = True
 
-    # check for score
-    playerMidPos = self.playerx + PLAYER_W / 2
-    for pipe in self.upperPipes:
-        pipeMidPos = pipe['x'] + PIPE_W / 2
-        if pipeMidPos <= playerMidPos < pipeMidPos + 4:
-            score += 1
-            reward += 1  # add large reward for scoring
+        # Check if player is passing through pipes
+        playerMidPos = self.playerx + PLAYER_W / 2
+        for pipe in self.upperPipes:
+            pipeMidPos = pipe['x'] + PIPE_W / 2
+            # Player is between the middle of pipes
+            if pipeMidPos <= playerMidPos < pipeMidPos + 4:
+                score += 1
+                reward += 1  # add large reward for scoring
 
-    # playerIndex basex change
-    if (self.loopIter + 1) % 3 == 0:
-        self.playerIndex = next(PLAYER_INDEX_GEN)
-    self.loopIter = (self.loopIter + 1) % 30
-    self.basex = -((-self.basex + 100) % self.baseShift)
+        # playerIndex basex change
+        if (self.loopIter + 1) % 3 == 0:
+            self.playerIndex = next(PLAYER_INDEX_GEN)
+        self.loopIter = (self.loopIter + 1) % 30
+        self.basex = -((-self.basex + 100) % self.baseShift)
 
-    # rotate the player
-    if self.playerRot > -90:
-        self.playerRot -= self.playerVelRot
+        # rotate the player
+        if self.playerRot > -90:
+            self.playerRot -= self.playerVelRot
 
-    # track player movement
-    if self.playerVelY < self.playerMaxVelY and not self.playerFlapped:
-        self.playerVelY += self.playerAccY
-    if self.playerFlapped:
-        self.playerFlapped = False
-        self.playerRot = 45 # rotate to cover the threshold
-    self.playery += min(self.playerVelY, 
-                        BASE_Y - self.playery - PLAYER_H)
-    if self.playery < 0:
-        self.playery = 0
+        # track player movement
+        if self.playerVelY < self.playerMaxVelY and not self.playerFlapped:
+            self.playerVelY += self.playerAccY
+        if self.playerFlapped:
+            self.playerFlapped = False
+            self.playerRot = 45 # rotate to cover the threshold
+        self.playery += min(self.playerVelY, 
+                            BASE_Y - self.playery - PLAYER_H)
+        if self.playery < 0:
+            self.playery = 0
 
-    # Pipe Movement------------------------------------------------------------
-    # move pipes to left
-    for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
-        uPipe['x'] += self.pipeVelX
-        lPipe['x'] += self.pipeVelX
+        # Pipe Movement------------------------------------------------------------
+        # move pipes to left
+        for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
+            uPipe['x'] += self.pipeVelX
+            lPipe['x'] += self.pipeVelX
 
-    # add new pipe when first pipe is about to touch left of screen
-    if 0 < self.upperPipes[0]['x'] < 5:
-        newPipe = getRandomPipe()
-        self.upperPipes.append(newPipe[0])
-        self.lowerPipes.append(newPipe[1])
+        # add new pipe when first pipe is about to touch left of screen
+        if 0 < self.upperPipes[0]['x'] < 5:
+            newPipe = self.getRandomPipe()
+            self.upperPipes.append(newPipe[0])
+            self.lowerPipes.append(newPipe[1])
 
-    # remove first pipe if its off the screen
-    if self.upperPipes[0]['x'] < -PIPE_W:
-        self.upperPipes.pop(0)
-        self.lowerPipes.pop(0)
+        # remove first pipe if its off the screen
+        if self.upperPipes[0]['x'] < -PIPE_W:
+            self.upperPipes.pop(0)
+            self.lowerPipes.pop(0)
 
-    # Check for Collision------------------------------------------------------
-    crash = checkCrash({'x': self.playerx,
-                        'y': self.playery,
-                        'index': self.playerIndex},
-                       self.upperPipes, 
-                       self.lowerPipes)
-    if crash:
-        terminal = True  # set as last frame 
-        self.__init__()
-        reward -= 5      # very large penalty if crash occurs
-    
-    # Update Screen------------------------------------------------------------
-    SCREEN.blit(IMAGES['background'], (0,0))
+        # Check for Collision------------------------------------------------------
+        crash = checkCrash({'x': self.playerx,
+                            'y': self.playery,
+                            'index': self.playerIndex},
+                        self.upperPipes, 
+                        self.lowerPipes)
+        if crash:
+            terminal = True  # set as last frame 
+            self.__init__()
+            reward -= 5      # very large penalty if crash occurs
+        
+        # Update Screen------------------------------------------------------------
+        SCREEN.blit(IMAGES['background'], (0,0))
 
-    for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
-        SCREEN.blit(IMAGES['pipe'][0], 
-                    (uPipe['x'], uPipe['y']))
-        SCREEN.blit(IMAGES['pipe'][1], 
-                    (lPipe['x'], lPipe['y']))
+        for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
+            SCREEN.blit(IMAGES['pipe'][0], 
+                        (uPipe['x'], uPipe['y']))
+            SCREEN.blit(IMAGES['pipe'][1], 
+                        (lPipe['x'], lPipe['y']))
 
-    SCREEN.blit(IMAGES['base'], 
-                (self.basex, BASE_Y))
+        SCREEN.blit(IMAGES['base'], 
+                    (self.basex, BASE_Y))
 
-    # limit player rotation
-    self.visibleRot = self.playerRotThr
-    if self.playerRot <= self.playerRotThr:
-        self.visibleRot = self.playerRot
+        # limit player rotation
+        self.visibleRot = self.playerRotThr
+        if self.playerRot <= self.playerRotThr:
+            self.visibleRot = self.playerRot
 
-    SCREEN.blit(IMAGES['player'][self.playerIndex], 
-                (self.playerx, self.playery))
+        SCREEN.blit(IMAGES['player'][self.playerIndex], 
+                    (self.playerx, self.playery))
 
-    # preserve frame as image to be passed into Deep-Q CNN
-    image = pygame.surfarray.array3d(pygame.display.get_surface())
+        # preserve frame as image to be passed into Deep-Q CNN
+        image = pygame.surfarray.array3d(pygame.display.get_surface())
 
-    # Move to Next Frame-------------------------------------------------------
-    pygame.display.update()
-    FPSCLOCK.tick(FPS)
-    
-    return image, reward, terminal
+        # Move to Next Frame-------------------------------------------------------
+        pygame.display.update()
+        FPSCLOCK.tick(FPS)
+        
+        return image, reward, score, terminal
 
-def getRandomPipe():
-    """returns a randomly generated pipe"""
-    # y of gap between upper and lower pipe
-    gapY  = random.randrange(0, int(BASE_Y * 0.6 - PIPE_GAP))
-    gapY += int(BASE_Y * 0.2)
-    pipeX = SCREEN_W + 10
+    def getRandomPipe(self):
+        """returns a randomly generated pipe"""
+        # y of gap between upper and lower pipe
+        gapY  = random.randrange(0, int(BASE_Y * 0.6 - PIPE_GAP))
+        gapY += int(BASE_Y * 0.2)
+        pipeX = SCREEN_W + 10
 
-    return [
-        {'x': pipeX, 'y': gapY - PIPE_H},  # upper pipe
-        {'x': pipeX, 'y': gapY + PIPE_GAP} # lower pipe
-    ]
+        return [
+            {'x': pipeX, 'y': gapY - PIPE_H},  # upper pipe
+            {'x': pipeX, 'y': gapY + PIPE_GAP} # lower pipe
+        ]
 
-def showScore(score):
-    """displays score in center of screen"""
-    scoreDigits = [int(x) for x in list(str(score))]
-    totalWidth  = 0 # width of numbers to be shown
-    for digit in scoreDigits:
-        totalWidth += IMAGES['numbers'][digit].get_width()
+    def showScore(self, score):
+        """displays score in center of screen"""
+        scoreDigits = [int(x) for x in list(str(score))]
+        totalWidth  = 0 # width of numbers to be shown
+        for digit in scoreDigits:
+            totalWidth += IMAGES['numbers'][digit].get_width()
 
-    Xoffset = (SCREEN_W - totalWidth) / 2
-    for digit in scoreDigits:
-        SCREEN.blit(IMAGES['numbers'][digit], 
-                    (Xoffset, SCREEN_H * 0.1))
-        Xoffset += IMAGES['numbers'][digit].get_width()
+        Xoffset = (SCREEN_W - totalWidth) / 2
+        for digit in scoreDigits:
+            SCREEN.blit(IMAGES['numbers'][digit], 
+                        (Xoffset, SCREEN_H * 0.1))
+            Xoffset += IMAGES['numbers'][digit].get_width()
 
-def checkCrash(player, upperPipes, lowerPipes):
-    """returns True if player collides with base or pipes."""
-    pi = player['index']
+    def checkCrash(self, player, upperPipes, lowerPipes):
+        """returns True if player collides with base or pipes."""
+        pi = player['index']
 
-    if player['y'] + PLAYER_H >= BASE_Y - 1:  # Player Crashed
-        return True
-    else:
-        playerRect = pygame.Rect(player['x'], player['y'],
-                     PLAYER_W, PLAYER_H)
+        if player['y'] + PLAYER_H >= BASE_Y - 1:  # Player Crashed
+            return True
+        else:
+            playerRect = pygame.Rect(player['x'], player['y'],
+                        PLAYER_W, PLAYER_H)
 
-        for uPipe, lPipe in zip(upperPipes, lowerPipes):
-            # upper and lower pipe rects
-            uPipeRect = pygame.Rect(uPipe['x'], uPipe['y'], 
-                                    PIPE_W, PIPE_H)
-            lPipeRect = pygame.Rect(lPipe['x'], lPipe['y'], 
-                                    PIPE_W, PIPE_H)
+            for uPipe, lPipe in zip(upperPipes, lowerPipes):
+                # upper and lower pipe rects
+                uPipeRect = pygame.Rect(uPipe['x'], uPipe['y'], 
+                                        PIPE_W, PIPE_H)
+                lPipeRect = pygame.Rect(lPipe['x'], lPipe['y'], 
+                                        PIPE_W, PIPE_H)
 
-            # player and upper/lower pipe hitmasks
-            pHitMask = HITMASKS['player'][pi]
-            uHitmask = HITMASKS['pipe'][0]
-            lHitmask = HITMASKS['pipe'][1]
+                # player and upper/lower pipe hitmasks
+                pHitMask = HITMASKS['player'][pi]
+                uHitmask = HITMASKS['pipe'][0]
+                lHitmask = HITMASKS['pipe'][1]
 
-            # if bird collided with upipe or lpipe
-            uCollide = pixelCollision(playerRect, uPipeRect, 
-                                      pHitMask, uHitmask)
-            lCollide = pixelCollision(playerRect, lPipeRect, 
-                                      pHitMask, lHitmask)
+                # if bird collided with upipe or lpipe
+                uCollide = self.pixelCollision(playerRect, uPipeRect, 
+                                               pHitMask, uHitmask)
+                lCollide = self.pixelCollision(playerRect, lPipeRect, 
+                                               pHitMask, lHitmask)
 
-            if uCollide or lCollide:  # Player Crashed
-                return True
-    # No Crash
-    return False
-
-def pixelCollision(rect1, rect2, hitmask1, hitmask2):
-    """Checks if two objects collide and not just their rects"""
-    rect = rect1.clip(rect2)
-
-    if rect.width == 0 or rect.height == 0:
+                if uCollide or lCollide:  # Player Crashed
+                    return True
+        # No Crash
         return False
 
-    x1, y1 = rect.x - rect1.x, rect.y - rect1.y
-    x2, y2 = rect.x - rect2.x, rect.y - rect2.y
+    def pixelCollision(self, rect1, rect2, hitmask1, hitmask2):
+        """Checks if two objects collide and not just their rects"""
+        rect = rect1.clip(rect2)
 
-    for x in range(rect.width):
-        for y in range(rect.height):
-            if hitmask1[x1+x][y1+y] and hitmask2[x2+x][y2+y]:
-                return True
-    return False
+        if rect.width == 0 or rect.height == 0:
+            return False
+
+        x1, y1 = rect.x - rect1.x, rect.y - rect1.y
+        x2, y2 = rect.x - rect2.x, rect.y - rect2.y
+
+        for x in range(rect.width):
+            for y in range(rect.height):
+                if hitmask1[x1+x][y1+y] and hitmask2[x2+x][y2+y]:
+                    return True
+        return False
