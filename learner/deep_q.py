@@ -18,15 +18,14 @@ References:
     github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/Quadcopter/tasks/takeoff.py
 '''
 import sys
-sys.path.append('../game/')
+sys.path.append('/game/')
 
 import os
 import cv2
-import opencv
 import tensorflow as tf
 import random as rand  
 import numpy as np
-import flappy
+import game.flappy as flappy
 from collections import deque
 
 class DeepQ:
@@ -37,80 +36,116 @@ class DeepQ:
                  name = 'DeepQ'):
         self.name = name
         self.lr   = lr
-        self.state_size = state_size
-        self.action_size = action_size
-        self.hidden_size = hidden_size
+        self.S = state_size
+        self.A = action_size
+        self.H = hidden_size
 
-    def network(self):
-        with tf.variable_scope(self.name):
-            # Deep-Q Neural Network Architecture-------------------------------
-            # Preprocessing----------------------------------------------------
-            # Set weight/bias of transformation on each network layer
-            conv1_w = w_var([8, 8, 4, 32])
-            conv1_b = b_var([32])
-            conv2_w = w_var([4, 4, 32, 64])
-            conv2_b = b_var([64])
-            conv3_w = w_var([3, 3, 64, 64])
-            conv3_b = b_var([64])
-            fc1_w   = w_var([1600, 512])
-            fc1_b   = b_var([512])
-            fc2_w   = w_var([512, self.action_size])
-            fc2_b   = b_var([self.action_size])
+        '''---Deep-Q Neural Network Architecture---
 
-            # Create and reshape input layer
-            inputs    = tf.placeholder(tf.float32, 
-                                       [None, 80, 80, 4], 
+        * Defines input layer
+        * Set weight/bias of layer convolutions
+
+        Convolution Formula for Outputs:
+        * layer.width and layer.height are the same when the input is square
+
+        layer.width = 
+            ((input.width - filter.width + 2 * padding) / stride) + 1
+
+        layer.height = 
+           ((input.height - filter.height + 2 * padding) / stride) + 1
+
+        ---Convolution Kernel Template---
+        [filter.width, filter.height, channels, filter.number] '''
+
+        '''---Create and reshape input layer---'''
+        self.inputs   = tf.placeholder(tf.float32, 
+                                      [None, self.S], 
                                        name = 'inputs')
 
-            # Encode actions for Q-Value comparisons
-            actions_  = tf.placeholder(tf.int32, 
-                                       [None], 
-                                       name = 'actions')
-            actions   = tf.one_hot(actions_, self.action_size)
+        '''---Convolution 1---'''                              # stride = 4
+        self.conv1_w = self.w_var([8, 8, 4, self.H])           # kernel
+        self.conv1_b = self.b_var([self.H])
 
-            '''
-            DeepQ Network Layer Architecture
+        '''---Convolution 2---'''                              # stride = 2
+        self.conv2_w = self.w_var([4, 4, self.H, self.H * 2])  # kernel
+        self.conv2_b = self.b_var([self.H * 2])
+
+        '''---Convolution 3---'''                              # stride = 1
+        self.conv3_w = self.w_var([3, 3, self.H * 2, self.H])  # kernel
+        self.conv3_b = self.b_var([self.H])
+
+        '''---Flatten 1---'''                                  # 256 x 1
+        self.fc1_w   = self.w_var([-1, 256])                   # kernel
+        self.fc1_b   = self.b_var([256])
+
+        '''---Flatten 2---'''                                
+        self.fc2_w   = self.w_var([256, self.A])               # kernel
+        self.fc2_b   = self.b_var([self.A])                    # dimensions = 2
+
+    def network(self):
+            '''---Convolutional Neural Network Architecture---
 
             * Play arounds with these layers to see what works best
-            * Don't forget to change the layer references when chancing layers
-              * Each layer should reference the previous
+            * Don't forget to change the layer references when changing layers
+              * Each layer should reference the previous one
+            
+            !!! tf.contrib will be removed in TensorFlow 2.0 !!!
             '''
-            # Create ReLu Hidden Layers----------------------------------------
-            fc1 = tf.contrib.layers.fully_connected(inputs, self.hidden_size)   # this one? Add activation function?
-            #conv1_h = tf.nn.relu(conv2d(inputs, conv1_w, 4) + conv1_b)         # Or this one?
-            pool1_h = max_pool_2x2(fc1)                                     
 
-            fc2 = tf.contrib.layers.fully_connected(pool1_h, self.hidden_size)
-            #conv2_h = tf.nn.relu(conv2d(pool1_h, conv2_w, 2) + conv2_b)
+            '''---Create Hidden Layers---'''
+            '''---Convolution Layer 1: ReLu Activation ---'''
+            #     [80 x 80 x 4] -> [8, 8, 4, 64] -> [20 x 20 x 64] 
+            fc1 = tf.nn.relu(self.conv2d(self.inputs, 
+                                         self.conv1_w, 4) + self.conv1_b)
+            '''---Max Pool Output---'''
+            #     [20 x 20 x 64] -> [1, 2, 2, 1] -> [10 x 10 x 64]
+            pool1_h = self.max_pool(fc1)
 
-            #pool2_h = max_pool_2x2(conv2_h)
-            conv3_h = tf.nn.relu(conv2d(fc2, conv3_w, 1) + conv3_b)
-            #pool3_h = max_pool_2x2(conv3_h)
-            #pool3_flat = tf.reshape(pool3_h, [-1, 256])
-            conv3_flat = tf.reshape(conv3_h, [-1, 1600])
+            '''---Convolution Layer 2: ReLu Activation---''' 
+            #     [10 x 10 x 64] -> [4, 4, 64, 128] -> [5 x 5 x 128]    
+            fc2 = tf.nn.relu(self.conv2d(pool1_h, 
+                                         self.conv2_w, 2) + self.conv2_b)
+            '''---Max Pool Output---'''
+            #     [5 x 5 x 128] -> [1, 2, 2, 1] -> [3 x 3 x 128]                           
+            pool2_h = self.max_pool(fc2)
 
-            fc1_h = tf.nn.relu(tf.matmul(conv3_flat, fc1_w) + fc1_b)
+            '''---Layer 3: Convolution with ReLu Activation---'''
+            #     [3 x 3 x 128] -> [3, 3, 128, 64] -> [3 x 3 x 64]    
+            fc3 = tf.nn.relu(self.conv2d(pool2_h, 
+                                         self.conv3_w, 1) + self.conv3_b)
+            '''---Max Pool Output---'''
+            #     [3 x 3 x 64] -> [1, 2, 2, 1] -> [2 x 2 x 64]
+            pool3_h = self.max_pool(fc3)
+            
+            '''---Reshape and Flatten---                
+                * [-1] instructs to adjust size as needed for flattening '''
+            #     [2 x 2 x 64] -> [-1, 256] -> [256, 1]
+            flat = tf.reshape(pool3_h, [-1, 256])    # flatten pool layer
 
-            # Create linear output layer
-            out = tf.matmul(fc1_h, fc2_w) + fc2_b
-            #out = tf.contrib.layers.fully_connected(fc2,                
-            #                            self.action_size,
-            #                            activation_fn = None)
-            #------------------------------------------------------------------
-            return inputs, out, fc1_h
+            '''---Fully Connect ReLu Layers---'''
+            fc1_h = tf.nn.relu(tf.matmul(flat, self.fc1_w) + self.fc1_b)
+
+            '''---Create Linear Output Layer---
+                * Dimension should be equal to the number of actions
+                    - Flap
+                    - Don't Flap '''
+            #     [256, 1] -> [2, 1]
+            out = tf.matmul(fc1_h, self.fc2_w) + self.fc2_b
+            
+            return self.inputs, out, fc1_h
 
     def w_var(self, shape):
-        return tf.Variable(tf.truncated_normal(shape, stddev = 0.01))
+        return tf.Variable(tf.truncated_normal(shape, stddev = self.lr))
 
     def b_var(self, shape):
-        return tf.Variable(tf.constant(0.01, shape = shape))
+        return tf.Variable(tf.constant(self.lr, shape = shape))
 
     def conv2d(self, x, W, stride):
         return tf.nn.conv2d(x, W, 
                             strides = [1, stride, stride, 1], 
                             padding = "SAME")
 
-    def max_pool_2x2(self, x):
+    def max_pool(self, x):
         return tf.nn.max_pool(x, 
                             ksize = [1, 2, 2, 1], 
                             strides = [1, 2, 2, 1], 
