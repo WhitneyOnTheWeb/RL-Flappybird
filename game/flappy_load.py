@@ -28,35 +28,36 @@ from skimage import io
 def load():
     # image and hit mask dictionaries
     IMAGES, HITMASKS = {}, {}
-    BACKGROUND       = 'assets/sprites/background-black.png'
-    PIPE             = 'assets/sprites/pipe-green.png'
+    PATH             = 'game/assets/sprites'
+    BACKGROUND       = PATH + '/background-black.png'
+    PIPE             = PATH + '/pipe-green.png'
 
     # player sprites (3 positions of flap)
     PLAYER = ( # yellow bird
-               'assets/sprites/yellowbird-upflap.png',
-               'assets/sprites/yellowbird-midflap.png',
-               'assets/sprites/yellowbird-downflap.png' )
+               PATH + '/yellowbird-upflap.png',
+               PATH + '/yellowbird-midflap.png',
+               PATH + '/yellowbird-downflap.png' )
 
     # numbers sprites for score display
     IMAGES['numbers'] = (
-        pygame.image.load('assets/sprites/0.png').convert_alpha(),
-        pygame.image.load('assets/sprites/1.png').convert_alpha(),
-        pygame.image.load('assets/sprites/2.png').convert_alpha(),
-        pygame.image.load('assets/sprites/3.png').convert_alpha(),
-        pygame.image.load('assets/sprites/4.png').convert_alpha(),
-        pygame.image.load('assets/sprites/5.png').convert_alpha(),
-        pygame.image.load('assets/sprites/6.png').convert_alpha(),
-        pygame.image.load('assets/sprites/7.png').convert_alpha(),
-        pygame.image.load('assets/sprites/8.png').convert_alpha(),
-        pygame.image.load('assets/sprites/9.png').convert_alpha()
+        pygame.image.load(PATH + '/0.png').convert_alpha(),
+        pygame.image.load(PATH + '/1.png').convert_alpha(),
+        pygame.image.load(PATH + '/2.png').convert_alpha(),
+        pygame.image.load(PATH + '/3.png').convert_alpha(),
+        pygame.image.load(PATH + '/4.png').convert_alpha(),
+        pygame.image.load(PATH + '/5.png').convert_alpha(),
+        pygame.image.load(PATH + '/6.png').convert_alpha(),
+        pygame.image.load(PATH + '/7.png').convert_alpha(),
+        pygame.image.load(PATH + '/8.png').convert_alpha(),
+        pygame.image.load(PATH + '/9.png').convert_alpha()
     )
     
     # game over sprite
-    IMAGES['gameover']   = pygame.image.load('assets/sprites/gameover.png')
+    IMAGES['gameover']   = pygame.image.load(PATH + '/gameover.png')
     IMAGES['gameover'].convert_alpha()
 
     # base (ground) sprite
-    IMAGES['base']       = pygame.image.load('assets/sprites/base.png')
+    IMAGES['base']       = pygame.image.load(PATH + '/base.png')
     IMAGES['base'].convert_alpha()
 
     IMAGES['player']     = (
