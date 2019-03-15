@@ -1,3 +1,17 @@
+import sys
+sys.path.append('game/')
+sys.path.append('learner/')
+
+import os
+import cv2
+import math
+import tensorflow as tf
+import random as rand  
+import numpy as np
+import game.flappy as flappy
+import matplotlib.pyplot as plt
+from collections import deque
+
 '''
 Deep-Q Reinforcement Learning for Flappy Bird
 File:    deep_q.py
@@ -24,18 +38,6 @@ References:
     github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/\
         Quadcopter/tasks/takeoff.py
 '''
-import sys
-sys.path.append('/game/')
-
-import os
-import cv2
-import math
-import tensorflow as tf
-import random as rand  
-import numpy as np
-import game.flappy as flappy
-import matplotlib.pyplot as plt
-from collections import deque
 
 class DeepQ:
     def __init__(self, lr = 0.01,

@@ -1,3 +1,21 @@
+import sys
+sys.path.append('game/')
+sys.path.append('learner/')
+
+import os
+import cv2
+import tensorflow as tf
+import random as rand  
+import numpy as np
+import game.flappy as flappy
+import matplotlib.pyplot as plt
+import matplotlib.image as img
+import matplotlib.animation as animate
+
+from learner.deep_q import DeepQ
+from learner.experience_replay import Buffer
+from collections import deque
+
 '''
 Deep-Q Reinforcement Learning for Flappy Bird
 File:    agent.py
@@ -29,20 +47,6 @@ References:
 	  ▓▓▓▓░░░░░░    ▓▓▓▓▓▓▓▓▓▓
 	      ▓▓▓▓▓▓▓▓▓▓        wk
 '''
-import os
-import cv2
-import sys
-import tensorflow as tf
-import random as rand  
-import numpy as np
-import game.flappy as flappy
-import matplotlib.pyplot as plt
-import matplotlib.image as img
-import matplotlib.animation as animate
-from learner.deep_q import DeepQ
-from learner.experience_replay import Buffer
-from collections import deque
-
 # ---Global Constant Parameters------------------------------------------------
 '''---Game and Action-State Settings---'''
 NAME = 'flappy'         # identifier for log files

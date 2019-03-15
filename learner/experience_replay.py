@@ -1,3 +1,7 @@
+from collections import namedtuple, deque
+import random
+import numpy as np
+import copy
 '''
 Deep-Q Reinforcement Learning for Flappy Bird
 File:    experience_replay.py
@@ -8,10 +12,6 @@ References:
     Udacity ML Engineer Nanodegree Classroom
     tinyurl.com/yd7rye3w
 '''
-from collections import namedtuple, deque
-import random
-import numpy as np
-import copy
 
 class Buffer:
     def __init__(self, buffer_size, batch_size):
