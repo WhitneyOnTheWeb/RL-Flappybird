@@ -5,270 +5,330 @@ Author:  Whitney King
 Date:    March 8, 2019
 
 References:
-    Udacity ML Engineer Quadcopter Project
-    github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/Quadcopter/tasks/takeoff.py
+    Deep Learning Video Games 
+    Author: Akshay Srivatsan
+    github.com/asrivat1/DeepLearningVideoGames/blob/master/deep_q_network.py
+
+    Using Deep-Q Network to Learn to Play Flappy Bird
+    Author: Kevin Chen
+    github.com/yenchenlin/DeepLearningFlappyBird
 
     Udacity ML Engineer Nanodegree Classroom
     tinyurl.com/yd7rye3w
+
+            ▓▓▓▓▓▓▓▓▓▓▓▓
+		▓▓▓▓░░    ▓▓    ▓▓
+	  ▓▓░░░░    ▓▓        ▓▓
+  ▓▓▓▓▓▓▓▓      ▓▓      ▓▓  ▓▓
+▓▓        ▓▓    ▓▓      ▓▓  ▓▓
+▓▓          ▓▓    ▓▓        ▓▓
+▓▓░░      ░░▓▓      ▓▓▓▓▓▓▓▓▓▓▓▓
+  ▓▓░░░░░░▓▓      ▓▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓
+    ▓▓▓▓▓▓░░    ▓▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓
+	▓▓░░░░░░░░    ▓▓▒▒▒▒▒▒▒▒▒▒▓▓
+	  ▓▓▓▓░░░░░░    ▓▓▓▓▓▓▓▓▓▓
+	      ▓▓▓▓▓▓▓▓▓▓        wk
 '''
 import os
 import cv2
 import sys
-import opencv
-import pprint as pp
 import tensorflow as tf
 import random as rand  
 import numpy as np
-from .deep_q import DeepQ
-from .experience_replay import Buffer
-from collections import deque
-sys.path.append('../game/')
 import game.flappy as flappy
+import matplotlib.pyplot as plt
+import matplotlib.image as img
+import matplotlib.animation as animate
+from learner.deep_q import DeepQ
+from learner.experience_replay import Buffer
+from collections import deque
+
+# ---Global Constant Parameters------------------------------------------------
+'''---Game and Action-State Settings---'''
+NAME = 'flappy'         # identifier for log files
+MODE = 'hard'           # sets game mode to hard
+FPS  = 30               # frames per second in emulation
+S    = 4                # number of states
+A    = 2                # number of possible actions
+H    = 64               # number of hidden layers
+K    = 1                # frames per action
+
+'''---Observation and Exploration---'''
+# Parameter values have been slashed for testing
+
+EPISODES     = 10          # number times to play game                         10000
+STEPS        = 9000        # max steps per episode                        FPS * 3600
+OBSERVE      = STEPS       # observation steps pre training                STEPS * 5
+EXPLORE      = STEPS * 3   # steps to anneal epsilon                      STEPS * 30
+INIT_EPSILON = 0.5         # initial value of epsilon
+TERM_EPSILON = 0.001       # terminal value of epsilon
+
+'''---Replay Memory---'''
+BUF_SIZE  = OBSERVE        # number of steps to track
+BATCH     = 32             # minibatch size                                       64
+
+'''---Algorithm Parameters---'''
+TARGET       = 40          # goal; sets the bar for success
+GAMMA        = 0.99        # discount factor of future rewards
+TAU          = 0.001       # soft target update
+LR           = 0.01        # learning rate
+
+'''---Log Files---'''
+A_LOG  = open('learner/logs/action.log', 'w')   # actions log
+S_LOG  = open('learner/logs/state.log', 'w')    # state log
+H_LOG  = open('learner/logs/hidden.log', 'w')   # hidden log
+# -----------------------------------------------------------------------------
 
 '''Your mission, should you choose to accept it...'''
 class Agent:
-    # Defines the goal and provides feedback to the agent
     def __init__(self):
-        # Initialize object to execute play Flappy Bird task
-        self.NAME = 'flappy'  # identifier for log files
-        self.FPS  = 30        # frames per second in emulation
-        self.S    = 4         # number of states
-        self.A    = 2         # number of possible actions
-        self.H    = 64        # number of hidden layers
-        self.K    = 1         # frames per action
+        '''---Initialize Session---'''
+        self.sess   = tf.InteractiveSession()           # initialize session
 
-        # Observation and Exploration Parameters
-        self.EPISODES = 10000             # number times to play game
-        self.STEPS    = self.FPS * 3600   # max steps per episode
-        self.OBSERVE  = self.STEPS / 2    # observation steps pre training
-        self.EXPLORE  = self.STEPS * 30   # steps to anneal epsilon
-        self.INIT_EPSILON = 0.5           # initial value of epsilon
-        self.TERM_EPSILON = 0.001         # terminal value of epsilon
+        '''---Hook in DeepQ Neural Network---'''
+        self.RL      = DeepQ(state_size  = S,
+                             action_size = A,   
+                             hidden_size = H)
 
-        # Replay Memory
-        self.BUF_SIZE  = 50000            # number of steps to track
-        self.BATCH     = 32               # minibatch size
-        self.memory    = Buffer(self.BUF_SIZE,
-                                self.BATCH)
+        '''---Persistent tracking---'''
+        self.buffer  = Buffer(BUF_SIZE, BATCH)          # replay memory
+        self.R       = []            # tracks total episode rewards
+        self.Sc      = []            # tracks total episode scores
+        self.T       = []            # tracks total steps in episode
+        self.step    = 0             # tracks steps across episodes
+        self.im      = plt.figure()  # prepare frame for rendering
 
-        # Algorithm Parameters
-        self.TARGET_SCORE = 40        # goal; sets the bar for success
-        self.GAMMA        = 0.99      # discount factor of future rewards
-        self.TAU          = 0.001     # soft target update
-        self.LR           = 0.01      # learning rate
+    def train(self, target = TARGET, mode = MODE):
+        '''---Initialize neural network---'''  
+        # state, network_output, fully-connected_layer      
+        s, out, fc1_h = self.RL.network()
+        '''---Begin game emulation---'''
+        for ep in range(1, EPISODES):
+            '''---START EPISODE---'''
+            self.game = flappy.GameState(target, mode)  # game emulation
+            E    = INIT_EPSILON                         # training epsilon
+            r_ep = 0                                    # episode reward
+            t    = 0                                    # transition number
+            '''---Initialize first state with no action---'''
+            a = a_t = wake = np.zeros([A], dtype = 'int32')
+            wake[0] = 1                                 # no action
+            # color_img, reward, score, terminal
+            x_t_c, r_0, s_ep, terminal = self.game.step(wake) # empty first step
 
-        # Log Files
-        self.A_LOG  = open('logs/readout.log', 'w')  # actions log
-        self.S_LOG  = open('logs/state.log', 'w')    # state log
-        self.H_LOG  = open('logs/hidden.log', 'w')   # hidden log
+            '''Preprocess image data, and stack into state_size layers'''
+            s_t = self.preprocess(x_t_c, t)        # gray_img', state'
 
-        # Persistent Tracking
-        self.reward_list = []        # tracks total episode rewards
-        self.score_list  = []        # tracks total episode scores
-        self.step = 0                # count steps across all episodes
+            '''---Prepare neural network to run emulation---'''
+            y, self.loss = self.loss_fn(a, out)    # targetQ and Loss function
+            play = tf.train.AdamOptimizer(LR).minimize(self.loss)
 
-    def train(self, s, out, fc1_h, sess):
-        '''----------------------Begin game emulation-----------------------'''
-        sess.run(tf.initialize_all_variables())    # initialize session
-        save = self.save_load(sess, False)         # load saved networks
-        
-        for ep in range(1, self.EPISODES):
-            '''-------------------Initialize new episode--------------------'''
-            game = flappy.GameState()     # start / reset game emulation
-            E    = self.INIT_EPSILON      # begin observation period
-            r_ep = 0                      # total episode reward
-            t    = 0                      # transition number
-            while t < self.STEPS:
-                '''--------------Initialize empty first state---------------'''
-                a = tf.placeholder("float", [None, self.A])
-                self.step += 1                       # count total steps
-                Q, targetQ, loss = loss(out, a)      # Qs, Loss, and Optimizer
-                play = tf.train.AdamOptimizer(self.LR).minimize(loss)
-                a_t, wake = np.zeros(self.A)              # empty action matrix
-                wake[0] = 1                                # no action
-                x_t, r_0, s_ep, terminal = game.step(wake) # first step
-                x_t, s_t = self.preprocess(x_t)           # Preprocess data
+            '''---Start selecting actions and stepping through states---'''
+            while t < STEPS:                        # limit episode max steps
+                self.step += 1                      # increment total steps
+                Qs  = self.greedy(out, s, s_t)[0]   # greedy maxQ policy
+                idx = 0                             # action index
+                '''---Check if observing or training---
+                * Observation period occurs once, spans across episodes
+                * Fills replay memory with random training data
+                * Training begins after observations, epsilon begins annealing
+                  * Determines Exploration or Exploitation probability'''
 
-                '''----------------Start selecting actions------------------'''
-                out_t = self.greedy(out, s, s_t)[0]    # follow greedy policy
-                idx   = 0                              # action index
-                if rand.random() <= E or t <= self.OBSERVE:
+                if rand.random() <= E or self.step <= OBSERVE:
                     '''Explore if rand <= Epsilon or in observation period'''
-                    meth = 'explore'
-                    idx = rand.randrange(self.A)  # random action
+                    meth = 'explore'              # always random if observing
+                    idx = rand.randrange(A)       # random action
                 else:
-                    ''' Exploit knowledge from previous observations '''
+                    '''Exploit knowledge from previous observations'''
                     meth = 'exploit'
-                    idx  = np.argmax(out_t)       # best action
+                    idx  = np.argmax(Qs)          # best action
                 a_t[idx] = 1                      # flag action
-
-                '''---------------Execute action in emulator----------------'''
-                x_t1, r_t, s_ep, terminal = game.step(a_t)        # take action
-                x_t1 = self.resample(x_t1)              # preprocess next state
-                x_t1 = self.threshold(x_t1)
-                x_t1 = np.reshape(x_t1, (80, 80, 1))
-                s_t1 = np.append(x_t1, s_t[:, :, :3], axis = 2)
-                r_ep += r_t                               # update reward total
+                '''---Send action to emulator---'''
+                x_t1_c, r_t, s_ep, terminal = self.game.step(a_t)
+                s_t1 = self.preprocess(x_t1_c, t)
                 
-                '''---------------Store experience in memory----------------'''
+                r_ep += r_t                       # update reward total
+                '''---Store experience in memory---'''
+                # self.memory.maxlen = self.BUF_SIZE
                 # (state, action, reward, state', terminal)
-                # Deque has maxlen = self.BUF_SIZE
                 self.add_exp(s_t, a_t, r_t, s_t1, terminal)
+                self.saver  = tf.train.Saver(max_to_keep = 25)  # checkpoint
+                self.sess.run(tf.global_variables_initializer())
 
-                if terminal:  # check for game over
-                    s_t1 = np.zeros(s_t.shape)          # clear next state
-                    self.memory.memory[-1][3] = s_t1    # update replay memory
-                    self.reward_list.append((ep, r_ep)) # log episode reward
-                    self.score_list.append((ep, s_ep))  # log episode score
-                    print('Episode:\t{ep}\t',           # show episode stats
-                          '| Score:\t{s_ep}\t'
-                          '| Steps:\t{t}\t',
-                          '| Reward:\t{r_ep}\t',
-                          '| Loss:\t{loss}\t',
-                          '| Terminal E:\t{E}',
-                          '-' * 80 + '\n')
-                    t = self.STEPS               # set as last step in episode
-                    continue                     # skip to next episode
+                self.load_save(False)                           # restore 
+                '''---Check for game over---'''
+                if terminal:
+                    '''---GAME OVER: END EPISODE---'''
+                    # log episode stats and flag episode as finished
+                    t = self.game_over(t, s_t, s_t1, ep, r_ep, s_ep, E)
+                    continue                  # skip to next episode
+                '''---Check for training period---'''
+                if self.step > OBSERVE:       # begin training
+                    E = self.decay(E)         # decay exploration probability
+                    '''---Select random batch of sample for training---'''
+                    mini = self.buffer.sample(BATCH)
+                    # parse sample information
+                    s_j_bat  = [d[0] for d in mini]    # states
+                    a_bat    = [d[1] for d in mini]    # actions
+                    r_bat    = [d[2] for d in mini]    # rewards
+                    s_j1_bat = [d[3] for d in mini]    # states'
+                    '''---Return game state information for each sample---'''
+                    y_bat    = []        # empty maxQ matrix
+                    Q_bat  = self.greedy(out, s, s_j1_bat)
+                    '''---Calculate maxQ for each state---'''
+                    for i in range(0, len(mini)):
+                        terminal = mini[i][4]          # check for game over   
+                        if terminal:                   # if game over
+                            y_bat.append(r_bat[i])     # log reward 
+                        else:                          # discount maxQ
+                            discount = GAMMA * np.max(Q_bat[i])
+                            r = r_bat[i] + discount    # add to reward
+                            y_bat.append(r)            # log reward
 
-                '''-------Train after collecting enough observations--------'''
-                if self.step > self.OBSERVE:   # total steps, not episode steps
-                    E = decay(E)               # decay exploration probability
-
-                    ''' Select random sample for training '''
-                    mini = self.memory.sample(self.BATCH)
-                    # Minibatch properties
-                    s_j_bat  = [d[0] for d in mini]   # states
-                    a_bat    = [d[1] for d in mini]   # actions
-                    r_bat    = [d[2] for d in mini]   # rewards
-                    s_j1_bat = [d[3] for d in mini]   # states'
-
-                    y_bat = []   # keep track of Q values
-                    out_bat = greedy(out, s, s_j1_bat)
-                    for i in range(len(mini)):
-                        terminal = mini[i][4]         
-                        if terminal:               # check for game over
-                            y_bat.append(r_bat[i]) # track reward value
-                        else:   # 
-                            r = r_bat[i] + self.GAMMA * np.max(out_bat[i])
-                            y_bat.append(r)  # add new entry
-
-                    # Take next step via Gradient Descent
+                    '''---Train using gradient decent, loss and Adam---'''
                     play.run(feed_dict = {
-                        targetQ : y_bat,
-                        a : a_bat,
-                        s : s_j_bat
-                    }) 
-                # Update values
+                             y : y_bat,
+                             a : a_bat,
+                             s : s_j_bat }) 
+                '''---Render emulation on screen---'''
+                # Update rendering @ 10 FPS
+                self.animate = animate.FuncAnimation(self.im, 
+                                                     self.get_image(x_t1_c),
+                                                     interval = 100,
+                                                     blit = True)
+                plt.show()
+                '''---Save and log progress every 10000 steps---'''
+                # Parameter values have been slashed for testing
+                if self.step % 1000 == 0:                                   # self.step % 10000
+                    self.new_save(ep, t) # new checkpoint
+                    '''---Log state information---'''
+                    if t <= OBSERVE: state = 'observe'  # get state type
+                    elif t > OBSERVE and t <= OBSERVE + EXPLORE:
+                        state = 'explore'
+                    else: state = 'train'
+                    S_LOG.write('EPISODE', ep,
+                                    '/ STEP', t, 
+                                    '/ STATE', state, 
+                                    '/ METHOD', meth,
+                                    '/ EPSILON', E,
+                                    '/ ACTION', idx,
+                                    '/ REWARD', r_t,
+                                    '/ MAX_Q %e' % np.max(Qs) + '\n')
+
+                    '''---Log action, network, and frame information---'''
+                    A_LOG.write(','.join([str(x) for x in Qs]) + '\n')
+                    H_LOG.write(','.join([str(x) for x in fc1_h.eval(\
+                                     feed_dict = {s : [s_t]})[0]]) + '\n')
+                    # Save frame as image
+                    cv2.imwrite('logs/images/' + NAME + '_ep' + str(ep)\
+                                + '_frame' + str(t) + '.png', x_t_c)
+                '''---Progress to next step/transition---'''
                 s_t = s_t1
                 t  += 1
 
-            # Save progress every 10000 transitions
-            if t % 10000 == 0: save.save(sess, 
-                                         'saved/' + self.NAME + '-dqn', 
-                                         global_step = t)
-            # Log state parameter values
-            state = ''
-            if t <= self.OBSERVE:
-                state = 'observe'
-            elif t > self.OBSERVE and t <= self.OBSERVE + self.EXPLORE:
-                state = 'explore'
-            else: state = 'train'
-            self.S_LOG.write('EPISODE', ep,
-                             '/ STEP', t, 
-                             '/ STATE', state, 
-                             '/ METHOD', meth,
-                             '/ EPSILON', E,
-                             '/ ACTION', idx,
-                             '/ REWARD', r_t,
-                             '/ MAX_Q %e' % np.max(out_t) + '\n')
+    
+    def greedy(self, out, s, s_t):
+        '''---Follow greedy policy to determine maxQ---'''
+        #s_t = s_t.reshape((1, *s_t.shape))
+        feed = {s: [s_t]}
+        print('feed: ', feed)
+        return out.eval(feed_dict = feed)
 
-            # Write to log files and save image every so often
-            if t % self.EPISODES <= 100000:
-                self.A_LOG.write(','.join([str(x) for x in out_t]) + '\n')
-                self.H_LOG.write(','.join([str(x) for x in fc1_h.eval(\
-                                 feed_dict = {s : [s_t]})[0]]) + '\n')
-                cv2.imwrite('logs/frame' + str(t) + '.png', x_t1)
+    def resample(self, x_t):
+        ''' * Reorient frame from (Y, X) to (X, Y)
+            * Resize image [512 x 288] -> [80 x 80] 
+            * Convert to grayscale '''
+        x_t = cv2.transpose(x_t)  # flips image from (Y, X) to (X, Y)
+        x_t = cv2.cvtColor(x_t, cv2.COLOR_BGR2GRAY)
+        x_t = cv2.resize(x_t, (80, 80))
+        #plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
+        return x_t
 
-    def add_exp(self, s_t, a_t, r_t, s_t1, term):
-        self.memory.add(s_t, a_t, r_t, s_t1, term)
+    def threshold(self, x_t):
+        '''---Normalize image from [0, 255] -> [0, 1] tones---
+        * input must be greyscale image
+          * separates black from all other tones
+        * tone value > 1  = white
+        * tone value <= 1 = black '''
+        x_t = cv2.threshold(x_t,
+                            1, 255,
+                            cv2.THRESH_BINARY)[1]
+        plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
+        return x_t
+
+    def preprocess(self, x_t, t):
+        '''---Preprocess frames for neural network---
+        * state is passed as a stack of four sequential frames
+        * first t of episode creates stack of state_size frames
+        * subsequent t removes oldest frame, appends image to stack
+          * [80, 80, 4]'''
+        x_t = self.resample(x_t)
+        x_t = self.threshold(x_t)
+        if t == 0: s_t = np.stack((x_t, x_t, x_t, x_t), axis = 2) # placeholder
+        else:                           # append frame to end of existing stack
+            x_t = np.reshape(x_t, (80, 80, 1))
+            s_t = np.append(x_t, s_t[:, :, :3], axis = 2)
+        return s_t
+
+    def get_image(self, x_t):
+        '''---Gets frame and formats it as an image to render on screen---'''
+        self.im = cv2.cvtColor(img.imread(x_t),cv2.COLOR_BGR2RGB)
+        self.im = plt.imshow(self.im)     # prepare frame display
 
     def run_emulation(self):
-        deepq = DeepQ()
-        s, out, fc1_h = deepq.network()
-        train(s, out, fc1_h, tf.InteractiveSession())
-    
-    def greedy(self, out, s, s_j):
-        return out.eval(feed_dict = {s : s_j})  
+        '''---Initialize RL Agent to train on emulation using neural network'''
+        self.train()
 
-    def resample(self, img):
-        return cv2.cvtColor(cv2.resize(img, (80, 80)), cv2.COLOR_BGR2GRAY)
-
-    def threshold(self, img):
-        ret, img = cv2.threshold(img,1,255,cv2.THRESH_BINARY)
-        return img
+    def game_over(self, t, s_t, s_t1, ep, r_ep, s_ep, E):
+        '''---Halts further steps, logs stats, and ends the current episode'''
+        # Execute if statement, skip remaining while statement
+        s_t1 = np.zeros(s_t.shape)          # clear next state
+        self.buffer.memory[-1][3] = s_t1    # update replay memory
+        self.R.append((ep, r_ep))           # log episode reward
+        self.Sc.append((ep, s_ep))          # log episode score
+        self.T.append((ep, t))              # log episode steps
+        # Display Episode Stats
+        print('Episode:\t{}\t'.format(ep), 
+              '| Score:\t{}\t'.format(s_ep),
+              '| Steps:\t{}\t'.format(t), 
+              '| Reward:\t{}\t'.format(r_ep),
+              '| Loss:\t{}\t'.format(self.loss), 
+              '| Terminal E:\t{}'.format(E),
+              '-' * 80 + '\n')
+        t = STEPS               # set as last step in episode
+        return t
+        
+    def add_exp(self, s_t, a_t, r_t, s_t1, term):
+        '''---Save experience to replay buffer---'''
+        self.buffer.add(s_t, a_t, r_t, s_t1, term)
 
     def decay(self, E):
-        # Check if network has surpassed observation period
-        if E > self.TERM_EPSILON:
-            E -= (self.INIT_EPSILON - self.TERM_EPSILON) / self.EXPLORE
+        '''---Anneal the value of E over exploration period---'''
+        # stops annealing when E = self.TERM_EPSILON
+        if E > TERM_EPSILON:
+            E -= (INIT_EPSILON - TERM_EPSILON) / EXPLORE
         return E
 
-    def loss(self, actions, out):
-        # Defines the loss function of actions for state
-        # Q has 2 dimensions, each corresponsding to an action
+    def loss_fn(self, actions, out):
+        '''---Defines the loss function of action state---'''
+        # Q has 2 dimensions, each corresponding to an action
         # Set training target to max Q
+        a_ot    = tf.one_hot(actions, A)
         targetQ = tf.placeholder(tf.float32, [None], name = 'target')
-        Q = tf.reduce_sum(tf.multiply(out, actions), axis = 1)
+        Q    = tf.reduce_sum(tf.multiply(out, a_ot), axis = 1)
         loss = tf.reduce_mean(tf.square(targetQ - Q))
-        return Q, targetQ, loss
+        return targetQ, loss
 
-    def preprocess(self, img):
-        # Reshape to 80x80x4 and convert to grayscale
-        img = resample(img)
-        ret, img = threshold(img)
-        # Generate state
-        s = np.stack((img, img, img, img), axis = 2)
-        return img, s
+    def new_save(self, ep, t):
+        '''---Save checkpoint as new file---'''
+        self.saver.save(self.sess, 
+                       'saved/' + NAME + '_ep' + str(ep)+ '_frame' + str(t),
+                        global_step=self.step)
 
-    def save_load(self, sess, load_save = False):
-        save = tf.train.Saver()  
-        checkpoint = tf.train.get_checkpoint_state('saved')
-
-        if load_save:
-            try:
-                save.restore(sess, checkpoint.model_checkpoint_path)
-                print('Successfully Loaded: ' + checkpoint.model_checkpoint_path)
-            except: print ('Existing Networks Not Found')
-        return save
-    
-
-#---------------------------------------------------------
-# Method: get_reward()
-
-# Establishes a penalty and reward structure for proximity
-# of bird spirte to pipe sprites. Reward maximizing the
-# distance, and penalize the closer bird is to a pipe
-#---------------------------------------------------------
-    def get_reward(self):
-        reward = 0                       # rewards maximizing distance
-        penalty = 0                      # penalizes getting too close to pipes
-        
-        #current_pos = self.sim.pose[:3]  # position has moved from the start
-        #pos_dist = np.array(current_pos) - np.array(self.target_pos) # distance between current and target pos
-        #e_angles = self.sim.pose[3:6]    # euler angle of each axis
-        #dist = abs(pos_dist).sum()
-        
-        # add a penalty for euler angles at take off to steady lift
-        #penalty += abs(e_angles).sum() ** 2
-        
-        # add a penalty for distance from target
-        #penalty += dist
-        
-        # add reward for nearing or reaching target goal
-        #if dist == 0: reward += 1000     # very large reward for reaching target
-        #elif dist <= 10: reward += 500   
-        #elif dist <= 50: reward += 250   # increase reward as dist gap closes
-        #elif dist <= 100: reward += 100
-        #else: reward += 10               # small reward for episode completion
-            
-#return np.tanh(reward - penalty *.005) # deduct penalties from final reward
+    def load_save(self, restore = False):
+        '''---Restore data from previous checkpoint---'''
+        checkpoint = tf.train.get_checkpoint_state('saved/')
+        if checkpoint and checkpoint.model_checkpoint_path:
+            self.saver.restore(self.sess, checkpoint.model_checkpoint_path)
+            print('--Loaded Checkpoint--\n' + \
+                  checkpoint.model_checkpoint_path + '\n')
+        else: print ('--Created New Checkpointer--')
