@@ -8,24 +8,33 @@ References:
 
     Deep Learning Video Games 
     Author: Akshay Srivatsan
-    github.com/asrivat1/DeepLearningVideoGames/blob/master/deep_q_network.py
+    github.com/asrivat1/DeepLearningVideoGames/blob/master/\
+        deep_q_network.py
 
     Using Deep-Q Network to Learn to Play Flappy Bird
     Author: Kevin Chen
     github.com/yenchenlin/DeepLearningFlappyBird
 
+    Visualizing Neural Network Activation
+    Author: Arthur Juliani
+    medium.com/@awjuliani/visualizing-neural-network-layer-activation-\
+        tensorflow-tutorial-d45f8bf7bbc4
+
     Udacity ML Engineer Quadcopter Project
-    github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/Quadcopter/tasks/takeoff.py
+    github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/\
+        Quadcopter/tasks/takeoff.py
 '''
 import sys
 sys.path.append('/game/')
 
 import os
 import cv2
+import math
 import tensorflow as tf
 import random as rand  
 import numpy as np
 import game.flappy as flappy
+import matplotlib.pyplot as plt
 from collections import deque
 
 class DeepQ:
@@ -55,15 +64,15 @@ class DeepQ:
            ((input.height - filter.height + 2 * padding) / stride) + 1
 
         ---Convolution Kernel Template---
-        [filter.width, filter.height, channels, filter.number] '''
+        [filter.width, filter.height, channels.input, channels.output] '''
 
         '''---Create and reshape input layer---'''
-        self.inputs   = tf.placeholder(tf.float32, 
-                                      [None, self.S], 
-                                       name = 'inputs')
+        self.state   = tf.placeholder(tf.float32, 
+                                      [None, 80, 80, self.S], 
+                                       name = 'state')
 
         '''---Convolution 1---'''                              # stride = 4
-        self.conv1_w = self.w_var([8, 8, 4, self.H])           # kernel
+        self.conv1_w = self.w_var([8, 8, self.S, self.H])      # kernel
         self.conv1_b = self.b_var([self.H])
 
         '''---Convolution 2---'''                              # stride = 2
@@ -74,29 +83,31 @@ class DeepQ:
         self.conv3_w = self.w_var([3, 3, self.H * 2, self.H])  # kernel
         self.conv3_b = self.b_var([self.H])
 
-        '''---Flatten 1---'''                                  # 256 x 1
-        self.fc1_w   = self.w_var([-1, 256])                   # kernel
+        '''---Flatten 1---'''                                  # 1600 x 256
+        self.fc1_w   = self.w_var([256, 256])                  # kernel
         self.fc1_b   = self.b_var([256])
 
-        '''---Flatten 2---'''                                
+        '''---Flatten 2---'''                                  # 256 x 1
         self.fc2_w   = self.w_var([256, self.A])               # kernel
-        self.fc2_b   = self.b_var([self.A])                    # dimensions = 2
+        self.fc2_b   = self.b_var([self.A])                    # Out: 2 x 1
 
     def network(self):
             '''---Convolutional Neural Network Architecture---
 
             * Play arounds with these layers to see what works best
-            * Don't forget to change the layer references when changing layers
-              * Each layer should reference the previous one
+            * Don't forget to change references when creating layers
+                * Each transformation should reference the previous one
             
             !!! tf.contrib will be removed in TensorFlow 2.0 !!!
+                * Using tf.nn APIs to construct architecture instead
             '''
 
-            '''---Create Hidden Layers---'''
             '''---Convolution Layer 1: ReLu Activation ---'''
             #     [80 x 80 x 4] -> [8, 8, 4, 64] -> [20 x 20 x 64] 
-            fc1 = tf.nn.relu(self.conv2d(self.inputs, 
+            fc1 = tf.nn.relu(self.conv2d(self.state, 
                                          self.conv1_w, 4) + self.conv1_b)
+
+            self.push_x(self.state[0], fc1)
             '''---Max Pool Output---'''
             #     [20 x 20 x 64] -> [1, 2, 2, 1] -> [10 x 10 x 64]
             pool1_h = self.max_pool(fc1)
@@ -115,24 +126,24 @@ class DeepQ:
                                          self.conv3_w, 1) + self.conv3_b)
             '''---Max Pool Output---'''
             #     [3 x 3 x 64] -> [1, 2, 2, 1] -> [2 x 2 x 64]
-            pool3_h = self.max_pool(fc3)
-            
+            pool3_h = self.max_pool(fc3)            
+
             '''---Reshape and Flatten---                
                 * [-1] instructs to adjust size as needed for flattening '''
-            #     [2 x 2 x 64] -> [-1, 256] -> [256, 1]
-            flat = tf.reshape(pool3_h, [-1, 256])    # flatten pool layer
+            #     [x 2 x 2 x 64] -> [-1, 1600], [1600, 256] -> [256, 1]
+            flat = tf.reshape(pool3_h, [-1, 256])
 
             '''---Fully Connect ReLu Layers---'''
             fc1_h = tf.nn.relu(tf.matmul(flat, self.fc1_w) + self.fc1_b)
 
-            '''---Create Linear Output Layer---
-                * Dimension should be equal to the number of actions
+            '''---Linear Output Layer---
+            * Dimension should be equal to the number of actions
                     - Flap
                     - Don't Flap '''
             #     [256, 1] -> [2, 1]
             out = tf.matmul(fc1_h, self.fc2_w) + self.fc2_b
             
-            return self.inputs, out, fc1_h
+            return self.state, out, fc1_h
 
     def w_var(self, shape):
         return tf.Variable(tf.truncated_normal(shape, stddev = self.lr))
@@ -151,3 +162,20 @@ class DeepQ:
                             strides = [1, 2, 2, 1], 
                             padding = "SAME")
 
+    def push_x(self, x, layer):
+        '''---Sends an image to a selected layer---'''
+        conv = layer.eval(feed_dict = {self.state: [x]})
+        self.show_conv(conv)
+
+    def show_conv(self, conv):
+        '''---Display graphs with images of filtered convolution layers---'''
+        filters = conv.shape[3]
+        plt.figure(1, figsize = (20, 20))
+        n_col = 6
+        n_row = math.ceil(filters / n_col) + 1
+        for i in range(filters):
+            plt.subplot(n_row, n_col, i+1)
+            plt.title('Filter ' + str(i))
+            plt.imshow(conv[0,:,:,i], 
+                       interpolation = 'nearest', 
+                       cmap = 'gray')
