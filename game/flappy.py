@@ -22,7 +22,6 @@ import numpy as np
 import random as rand
 from pygame.locals import *
 from itertools import cycle
-sys.path.append('/game/')
 import game.flappy_load as fl
 
 # Graphic Settings
