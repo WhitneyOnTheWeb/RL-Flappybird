@@ -67,15 +67,14 @@ EXPLORE      = STEPS * 3   # steps to anneal epsilon                      STEPS 
 INIT_EPSILON = 0.5         # initial value of epsilon
 TERM_EPSILON = 0.001       # terminal value of epsilon
 
-'''---Replay Memory---'''
-BUF_SIZE  = OBSERVE        # number of steps to track
-BATCH     = 32             # minibatch size                                       64
-
 '''---Algorithm Parameters---'''
 TARGET       = 40          # goal; sets the bar for success
 GAMMA        = 0.99        # discount factor of future rewards
-TAU          = 0.001       # soft target update
 LR           = 0.01        # learning rate
+
+'''---Replay Memory---'''
+BUF_SIZE  = OBSERVE        # number of steps to track
+BATCH     = 32             # minibatch size                                       64
 
 '''---Log Files---'''
 A_LOG  = open('learner/logs/action.log', 'w')   # actions log
@@ -86,6 +85,8 @@ H_LOG  = open('learner/logs/hidden.log', 'w')   # hidden log
 '''Your mission, should you choose to accept it...'''
 class Agent:
     def __init__(self):
+        super(Agent, self).__init__()
+
         '''---Initialize Session---'''
         self.sess   = tf.InteractiveSession()           # initialize session
 

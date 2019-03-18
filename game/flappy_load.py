@@ -31,11 +31,12 @@ def load():
     # image and hit mask dictionaries
     IMAGES, HITMASKS = {}, {}
 
-    # validate images are in correct format
-    PATH  = os.getcwd() + '/game/assets/sprites/' 
+    # set path for OS environment
+    if os.name == 'Linux': 
+        PATH = str(os.getcwd()) + '/game/assets/sprites/' 
+    else: PATH = str(os.getcwd()) + '\\game\\assets\\sprites\\' 
     ftype = '.png'
-    print(pygame.image.get_extended())
-    
+
     # obstacle sprites
     BACKGROUND = PATH + 'background-black' + ftype
     PIPE       = PATH + 'pipe-green' + ftype
@@ -59,10 +60,6 @@ def load():
         pygame.image.load(PATH + '8' + ftype).convert_alpha(),
         pygame.image.load(PATH + '9' + ftype).convert_alpha()
     )
-    
-    # game over sprite
-    IMAGES['gameover'] = pygame.image.load(PATH + 'gameover' + ftype)
-    IMAGES['gameover'].convert_alpha()
 
     # base (ground) sprite
     IMAGES['base'] = pygame.image.load(PATH + 'base' + ftype)
