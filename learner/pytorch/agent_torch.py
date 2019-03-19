@@ -4,7 +4,15 @@ sys.path.append('learner/')
 
 import os
 import cv2
-import tensorflow as tf
+
+import torch 
+import torch.transforms as TN
+import torch.transforms.functional as TF
+import torch.nn.functional as NN
+import torch.nn as nn
+import torch.utils.data as data
+import torchvision
+
 import random as rand  
 import numpy as np
 import game.flappy as flappy
@@ -12,7 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as img
 import matplotlib.animation as animate
 
-from learner.deep_q import DeepQ
+from learner.deep_q_torch import DeepQ
 from learner.experience_replay import Buffer
 from collections import deque
 
@@ -23,6 +31,11 @@ Author:  Whitney King
 Date:    March 8, 2019
 
 References:
+    PyTorch DeepQ CNN Tutorial
+    Author: Morvan Zhou
+    https://github.com/MorvanZhou/PyTorch-Tutorial/blob/master/\
+        tutorial-contents/401_CNN.py
+
     Deep Learning Video Games 
     Author: Akshay Srivatsan
     github.com/asrivat1/DeepLearningVideoGames/blob/master/deep_q_network.py
@@ -60,21 +73,21 @@ K    = 1                # frames per action
 '''---Observation and Exploration---'''
 # Parameter values have been slashed for testing
 
-EPISODES     = 10          # number times to play game                         10000
-STEPS        = 9000        # max steps per episode                        FPS * 3600
+EPISODES     = 10          # number times to play game (epoch)                  1000
+STEPS        = 500         # max steps per episode                         FPS * 900
 OBSERVE      = STEPS       # observation steps pre training                STEPS * 5
 EXPLORE      = STEPS * 3   # steps to anneal epsilon                      STEPS * 30
 INIT_EPSILON = 0.5         # initial value of epsilon
 TERM_EPSILON = 0.001       # terminal value of epsilon
 
+'''---Replay Memory---'''
+BUF_SIZE  = OBSERVE        # number of steps to track
+BATCH     = 32             # minibatch size                                       64
+
 '''---Algorithm Parameters---'''
 TARGET       = 40          # goal; sets the bar for success
 GAMMA        = 0.99        # discount factor of future rewards
 LR           = 0.01        # learning rate
-
-'''---Replay Memory---'''
-BUF_SIZE  = OBSERVE        # number of steps to track
-BATCH     = 32             # minibatch size                                       64
 
 '''---Log Files---'''
 A_LOG  = open('learner/logs/action.log', 'w')   # actions log
@@ -83,12 +96,11 @@ H_LOG  = open('learner/logs/hidden.log', 'w')   # hidden log
 # -----------------------------------------------------------------------------
 
 '''Your mission, should you choose to accept it...'''
-class Agent:
+class Agent(nn.Module):
     def __init__(self):
         super(Agent, self).__init__()
-
         '''---Initialize Session---'''
-        self.sess   = tf.InteractiveSession()           # initialize session
+        self.sess   = torch.Session()           # initialize session
 
         '''---Hook in DeepQ Neural Network---'''
         self.RL      = DeepQ(state_size  = S,
@@ -107,6 +119,7 @@ class Agent:
         '''---Initialize neural network---'''  
         # state, network_output, fully-connected_layer      
         s, out, fc1_h = self.RL.network()
+
         '''---Begin game emulation---'''
         for ep in range(1, EPISODES):
             '''---START EPISODE---'''
@@ -125,7 +138,7 @@ class Agent:
 
             '''---Prepare neural network to run emulation---'''
             y, self.loss = self.loss_fn(a, out)    # targetQ and Loss function
-            play = tf.train.AdamOptimizer(LR).minimize(self.loss)
+            play = torch.optim.Adam(LR).minimize(self.loss)
 
             '''---Start selecting actions and stepping through states---'''
             while t < STEPS:                        # limit episode max steps
@@ -242,22 +255,22 @@ class Agent:
         ''' * Reorient frame from (Y, X) to (X, Y)
             * Resize image [512 x 288] -> [80 x 80] 
             * Convert to grayscale '''
-        x_t = cv2.transpose(x_t)  # flips image from (Y, X) to (X, Y)
-        x_t = cv2.cvtColor(x_t, cv2.COLOR_BGR2GRAY)
-        x_t = cv2.resize(x_t, (80, 80))
-        #plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
+        x_t = TN.Compose(
+            TF.to_grayscale(x_t),
+            TF.resize(x_t, [80, 80]),
+            TF.to_tensor(x_t)
+        )
+        # plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
         return x_t
 
     def threshold(self, x_t):
         '''---Normalize image from [0, 255] -> [0, 1] tones---
-        * input must be greyscale image
-          * separates black from all other tones
-        * tone value > 1  = white
-        * tone value <= 1 = black '''
-        x_t = cv2.threshold(x_t,
-                            1, 255,
-                            cv2.THRESH_BINARY)[1]
-        plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
+          * separates black from all other colors
+        * tone value >= 1  = white
+        * tone value < 1 = black '''
+        x_t = nn.Threshold(1, 1)  # if color > 1, flip to 1
+
+        # plt.imshow(x_t, cmap = 'gray', vmin = 0, vmax = 255)
         return x_t
 
     def preprocess(self, x_t, t):
@@ -313,15 +326,7 @@ class Agent:
             E -= (INIT_EPSILON - TERM_EPSILON) / EXPLORE
         return E
 
-    def loss_fn(self, actions, out):
-        '''---Defines the loss function of action state---'''
-        # Q has 2 dimensions, each corresponding to an action
-        # Set training target to max Q
-        a_ot    = tf.one_hot(actions, A)
-        targetQ = tf.placeholder(tf.float32, [None], name = 'target')
-        Q    = tf.reduce_sum(tf.multiply(out, a_ot), axis = 1)
-        loss = tf.reduce_mean(tf.square(targetQ - Q))
-        return targetQ, loss
+    
 
     def new_save(self, ep, t):
         '''---Save checkpoint as new file---'''
@@ -337,3 +342,17 @@ class Agent:
             print('--Loaded Checkpoint--\n' + \
                   checkpoint.model_checkpoint_path + '\n')
         else: print ('--Created New Checkpointer--')
+
+class Loss(nn.Module):
+    def __init__(self):
+        super(Loss, self).__init__()
+
+        def forward(self, a, out):
+            '''---Defines the loss function of action state---'''
+            # Q has 2 dimensions, each corresponding to an action
+            # Set training target to max Q
+            a_ot    = tf.one_hot(a, self.A)
+            targetQ = tf.placeholder(torch.float32, [None], name = 'target')
+            Q    = tf.reduce_sum(torch.prod(out, a_ot), axis = 1)
+            loss = tf.reduce_mean(tf.square(targetQ - Q))
+            return targetQ, loss

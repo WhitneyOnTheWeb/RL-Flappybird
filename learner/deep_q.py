@@ -4,10 +4,11 @@ sys.path.append('learner/')
 
 import os
 import cv2
-import math
-import tensorflow as tf
-import random as rand  
+import math  
 import numpy as np
+import random as rand
+import tensorflow as tf
+import tensorflow.keras as keras
 import game.flappy as flappy
 import matplotlib.pyplot as plt
 from collections import deque
@@ -45,8 +46,9 @@ class DeepQ:
                  action_size = 2, 
                  hidden_size = 64,
                  name = 'DeepQ'):
-        self.name = name
-        self.lr   = lr
+        self.model = keras.Sequential()
+        self.name  = name
+        self.lr    = lr
         self.S = state_size
         self.A = action_size
         self.H = hidden_size
@@ -68,116 +70,88 @@ class DeepQ:
         ---Convolution Kernel Template---
         [filter.width, filter.height, channels.input, channels.output] '''
 
-        '''---Create and reshape input layer---'''
+        '''---Create state from inputs---'''
         self.state   = tf.placeholder(tf.float32, 
                                       [None, 80, 80, self.S], 
                                        name = 'state')
 
-        '''---Convolution 1---'''                              # stride = 4
-        self.conv1_w = self.w_var([8, 8, self.S, self.H])      # kernel
-        self.conv1_b = self.b_var([self.H])
+        '''---Convolutional Neural Network Architecture---
 
-        '''---Convolution 2---'''                              # stride = 2
-        self.conv2_w = self.w_var([4, 4, self.H, self.H * 2])  # kernel
-        self.conv2_b = self.b_var([self.H * 2])
-
-        '''---Convolution 3---'''                              # stride = 1
-        self.conv3_w = self.w_var([3, 3, self.H * 2, self.H])  # kernel
-        self.conv3_b = self.b_var([self.H])
-
-        '''---Flatten 1---'''                                  # 1600 x 256
-        self.fc1_w   = self.w_var([256, 256])                  # kernel
-        self.fc1_b   = self.b_var([256])
-
-        '''---Flatten 2---'''                                  # 256 x 1
-        self.fc2_w   = self.w_var([256, self.A])               # kernel
-        self.fc2_b   = self.b_var([self.A])                    # Out: 2 x 1
-
-    def network(self):
-            '''---Convolutional Neural Network Architecture---
-
-            * Play arounds with these layers to see what works best
-            * Don't forget to change references when creating layers
-                * Each transformation should reference the previous one
+        * Play arounds with these layers to see what works best
+        * Don't forget to change references when creating layers
+            * Each transformation should reference the previous one
             
-            !!! tf.contrib will be removed in TensorFlow 2.0 !!!
-                * Using tf.nn APIs to construct architecture instead
-            '''
+        !!! tf.contrib will be removed in TensorFlow 2.0 !!!
+            * Using keras.layers APIs to construct architecture instead
+        '''
+        #---Define MaxPooling2D Structure---
+        MaxPooling2D = keras.layers.MaxPooling2D(pool_size = [1, 2, 2, 1],
+                                                 strides = [1, 2, 2, 1],
+                                                 padding = 'same')
 
-            '''---Convolution Layer 1: ReLu Activation ---'''
-            #     [80 x 80 x 4] -> [8, 8, 4, 64] -> [20 x 20 x 64] 
-            fc1 = tf.nn.relu(self.conv2d(self.state, 
-                                         self.conv1_w, 4) + self.conv1_b)
+        '''---Sequence 1: Convolution2D w/ ReLu Activation & MaxPooling2D---'''
+        self.conv1 = keras.Sequential([
+            # [80 x 80 x 4] -> [8, 8, 4, 64] -> [20 x 20 x 64] 
+            keras.layers.Conv2D(filters = self.H,
+                                kernel_size = [8, 8, self.S, self.H],
+                                strides = 4,
+                                use_bias = True,
+                                bias_initializer = [self.H],
+                                padding = 'same'),
+            keras.layers.ReLU(),
+            # [20 x 20 x 64] -> [1, 2, 2, 1] -> [10 x 10 x 64]
+            MaxPooling2D
+        ])
 
-            self.push_x(self.state[0], fc1)
-            '''---Max Pool Output---'''
-            #     [20 x 20 x 64] -> [1, 2, 2, 1] -> [10 x 10 x 64]
-            pool1_h = self.max_pool(fc1)
+        '''---Sequence 2: Convolution2D w/ ReLu Activation & MaxPooling2D---'''  
+        self.conv2 = keras.Sequential([
+            # [10 x 10 x 64] -> [4, 4, 64, 128] -> [5 x 5 x 128]    
+            keras.layers.Conv2D(filters = self.H * 2,
+                                kernel_size = [4, 4, self.H, self.H * 2],
+                                strides = 2,
+                                use_bias = True,
+                                bias_initializer = [self.H * 2],
+                                padding = 'same'),
+            keras.layers.ReLU(),
+            # [5 x 5 x 128] -> [1, 2, 2, 1] -> [3 x 3 x 128]    
+            MaxPooling2D
+        ])
 
-            '''---Convolution Layer 2: ReLu Activation---''' 
-            #     [10 x 10 x 64] -> [4, 4, 64, 128] -> [5 x 5 x 128]    
-            fc2 = tf.nn.relu(self.conv2d(pool1_h, 
-                                         self.conv2_w, 2) + self.conv2_b)
-            '''---Max Pool Output---'''
-            #     [5 x 5 x 128] -> [1, 2, 2, 1] -> [3 x 3 x 128]                           
-            pool2_h = self.max_pool(fc2)
+        '''---Sequence 3: Convolution2D w/ ReLu Activation & MaxPooling2D---'''
+        self.conv3 = keras.Sequential([
+            # [3 x 3 x 128] -> [3, 3, 128, 64] -> [3 x 3 x 64]    
+            keras.layers.Conv2D(filters = self.H,
+                                kernel_size = [3, 3, self.H * 2, self.H],
+                                strides = 1,
+                                use_bias = True,
+                                bias_initializer = [self.H],
+                                padding = 'same'),
+            keras.layers.ReLU(),
+            # [3 x 3 x 64] -> [1, 2, 2, 1] -> [2 x 2 x 64]
+            MaxPooling2D
+        ])      
 
-            '''---Layer 3: Convolution with ReLu Activation---'''
-            #     [3 x 3 x 128] -> [3, 3, 128, 64] -> [3 x 3 x 64]    
-            fc3 = tf.nn.relu(self.conv2d(pool2_h, 
-                                         self.conv3_w, 1) + self.conv3_b)
-            '''---Max Pool Output---'''
-            #     [3 x 3 x 64] -> [1, 2, 2, 1] -> [2 x 2 x 64]
-            pool3_h = self.max_pool(fc3)            
+        '''---Sequence 4: Flatten and Fully Connect ReLU Layers for Output---'''
+        # [-1] adjusts size as needed for flattening
+        self.out = keras.Sequential([
+            # [2 x 2 x 64] -> [1, 256]
+            keras.layers.Flatten(),
+            keras.layers.ReLU(),
+            # [1, 256] -> [None, 2]
+            keras.layers.Dense(self.A, 
+                               activation = 'relu')
+        ])
 
-            '''---Reshape and Flatten---                
-                * [-1] instructs to adjust size as needed for flattening '''
-            #     [x 2 x 2 x 64] -> [-1, 1600], [1600, 256] -> [256, 1]
-            flat = tf.reshape(pool3_h, [-1, 256])
+        #---Compile all layers as single model---
+        self.model.add(self.conv1)
+        self.model.add(self.conv2)
+        self.model.add(self.conv3)
+        self.model.add(self.out)
 
-            '''---Fully Connect ReLu Layers---'''
-            fc1_h = tf.nn.relu(tf.matmul(flat, self.fc1_w) + self.fc1_b)
+        def visualize_layer(model)
 
-            '''---Linear Output Layer---
-            * Dimension should be equal to the number of actions
-                    - Flap
-                    - Don't Flap '''
-            #     [256, 1] -> [2, 1]
-            out = tf.matmul(fc1_h, self.fc2_w) + self.fc2_b
-            
-            return self.state, out, fc1_h
-
-    def w_var(self, shape):
-        return tf.Variable(tf.truncated_normal(shape, stddev = self.lr))
-
-    def b_var(self, shape):
-        return tf.Variable(tf.constant(self.lr, shape = shape))
-
-    def conv2d(self, x, W, stride):
-        return tf.nn.conv2d(x, W, 
-                            strides = [1, stride, stride, 1], 
-                            padding = "SAME")
-
-    def max_pool(self, x):
-        return tf.nn.max_pool(x, 
-                            ksize = [1, 2, 2, 1], 
-                            strides = [1, 2, 2, 1], 
-                            padding = "SAME")
-
-    def push_x(self, x, layer):
-        '''---Sends an image to a selected layer---'''
-        conv = layer.eval(feed_dict = {self.state: [x]})
-        self.show_conv(conv)
-
-    def show_conv(self, conv):
-        '''---Display graphs with images of filtered convolution layers---'''
-        filters = conv.shape[3]
-        plt.figure(1, figsize = (20, 20))
-        n_col = 6
-        n_row = math.ceil(filters / n_col) + 1
-        for i in range(filters):
-            plt.subplot(n_row, n_col, i+1)
-            plt.title('Filter ' + str(i))
-            plt.imshow(conv[0,:,:,i], 
-                       interpolation = 'nearest', 
-                       cmap = 'gray')
+    def forward(self, x):
+        '''pass input into model, return results'''
+        fc = self.model(x)
+        out = self.out(fc.view(fc.size(0), -1))
+        return x, out, fc
