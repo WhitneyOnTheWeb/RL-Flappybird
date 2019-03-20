@@ -28,8 +28,11 @@ import game.flappy_load as fl
 SCREEN_W  = 288
 SCREEN_H  = 512
 FPS       = 30
+
+pygame.init()
 FPSCLOCK  = pygame.time.Clock()
 SCREEN    = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+pygame.display.set_caption('Flappy Bird')
 
 # Obstacle Settings
 BASE_Y    = SCREEN_H * 0.79 # amount base can shift left
@@ -51,10 +54,8 @@ PLAYER_INDEX_GEN = cycle([0, 1, 2, 1])
 
 class GameState:
     def __init__(self, target_score = 40, difficulty = 'hard'):
-        '''---Initialize New Game---'''
-        pygame.init()
-        pygame.display.set_caption('Flappy Bird')
-        
+        '''---Initialize New Game---'''        
+        self.terminal = False
         self.score = self.reward = self.playerIndex = self.loopIter = 0
         self.playerx   = int(SCREEN_W * 0.2)
         self.playery   = int((SCREEN_H - PLAYER_H) / 2)
@@ -62,10 +63,10 @@ class GameState:
         self.baseShift = BASE_W - BACKGROUND_W
         self.target    = target_score
         self.pipe_gap  = self.set_mode(difficulty)  # gap between pipes
-        self.terminal  = False               # sets game as in progress
 
-        pipe1 = self.getRandomPipe()
-        pipe2 = self.getRandomPipe()
+        # Randomly generate two sets of pipes
+        pipe1, gapY1 = self.getRandomPipe()
+        pipe2, gapY2 = self.getRandomPipe()
         self.upperPipes = [
             {'x': SCREEN_W, 
              'y': pipe1[0]['y']},
@@ -76,6 +77,13 @@ class GameState:
              'y': pipe1[1]['y']},
             {'x': SCREEN_W + (SCREEN_W / 2), 
              'y': pipe2[1]['y']}]
+        self.gapPos = [
+            {'top' : gapY1,   # gap pos for pipe set 1
+             'btm' : gapY1 + self.pipe_gap},
+            {'top' : gapY2,   # gap pos for pipe set 1
+             'btm' : gapY2 + self.pipe_gap},
+        ]
+
 
         '''---Movement and action parameters'''
         self.pipeVelX = -4
@@ -90,15 +98,16 @@ class GameState:
         self.playerFlapped =  False   # True when player flaps
 
     def step(self, action):
-        '''---If game over, reset game state---'''
         if self.terminal: self.__init__() 
-        pygame.event.pump()
 
+        pygame.event.pump()
         ''' Player Movement:
              action[0] == 1:  Don't Flap
              action[1] == 1:  Flap '''
         if sum(action) != 1:          # validate action
             raise ValueError('Invalid action state!')
+
+        reward = 0
 
         if action[1]:
             if self.playery > -2 * PLAYER_H:
@@ -112,7 +121,7 @@ class GameState:
             # Player is between the middle of pipes
             if pipeMidPos <= playerMidPos < pipeMidPos + 4:
                 self.score += 1      # player has scored
-                self.reward += 1     # large reward for scoring
+                reward += 1     # large reward for scoring
 
                 '''---Increase reward as score approaches target score---'''
                 if self.score >= self.target:           self.reward += 8
@@ -120,18 +129,18 @@ class GameState:
                 elif self.score >= self.target * 0.5:   self.reward += 3
                 elif self.score >= self.target * 0.25:  self.reward += 2
 
-        '''---Shift player index forward---'''
+        '''---Move basex index to the left---'''
         if (self.loopIter + 1) % 3 == 0:
             self.playerIndex = next(PLAYER_INDEX_GEN)
         self.loopIter = (self.loopIter + 1) % 30
         self.basex = -((-self.basex + 100) % self.baseShift)
 
-        '''---Rotate player based on current rotation and velocity---'''
+        '''---Rotate player based on current angle and velocity---'''
         if self.playerRot > -90:
             self.playerRot -= self.playerVelRot
 
         '''---Adjust player velocity---
-        * Based action and current position, rotation, and acceleration '''
+        * Based on action and current position, rotation, and acceleration '''
         if self.playerVelY < self.playerMaxVelY and not self.playerFlapped:
             self.playerVelY += self.playerAccY
         if self.playerFlapped:
@@ -147,7 +156,7 @@ class GameState:
             uPipe['x'] += self.pipeVelX
             lPipe['x'] += self.pipeVelX
 
-        '''---Add second pipe as first pipe reaches left side of screen---'''
+        '''---Add set of pies as first approaches left of screen---'''
         if 0 < self.upperPipes[0]['x'] < 5:
             newPipe = self.getRandomPipe()
             self.upperPipes.append(newPipe[0])
@@ -165,9 +174,24 @@ class GameState:
                                 self.upperPipes, 
                                 self.lowerPipes)
         if crash:
-            self.terminal  = True   # set as last frame 
-            self.reward -= 5      # very large penalty if crash occurs
-        else: self.reward += 0.01    # small reward for continued flying
+            self.terminal  = True    # set as last frame 
+            reward = -3              # penalty if crash occurs
+            msg = 'Boom, bitch!'
+        else: # calculate reward based on distance above / below pipe gap
+            if self.gapPos[0]['btm'] > self.playery > self.gapPos[0]['top']:
+                reward = .3
+                msg = 'Stay here!'                               # reward
+            elif self.playery <= self.gapPos[0]['top'] + 10:     # penalize
+                reward = (self.playery - self.gapPos[0]['btm']) * 1e-4
+                msg = 'Go down!'
+            elif self.playery >= self.gapPos[0]['btm'] - 10:
+                reward = (self.gapPos[0]['btm'] - self.playery) * 1e-4
+                msg = 'Go up!'
+            else: msg = 'Almost right!'                          # no reward
+        self.reward += reward
+
+            #print('playery: {}  |  gap.top: {}  |  gap.btm: {}  |  {}'.\
+            #      format(self.playery, self.gapPos[0]['top'], self.gapPos[0]['btm'], msg))
         
         '''---Update screen to reflect state changes---'''
         SCREEN.blit(IMAGES['background'], (0,0))
@@ -195,7 +219,7 @@ class GameState:
         pygame.display.update()
         FPSCLOCK.tick(FPS)
         
-        return self.frame, self.reward, self.score, self.terminal
+        return self.frame, reward, self.reward, self.score, self.terminal, msg
 
     def set_mode(self, difficulty):
         '''Sets size of the gap between the upper and lower pipes'''
@@ -214,8 +238,8 @@ class GameState:
         return [
             {'x': pipeX, 'y': gapY - PIPE_H},       # upper pipe
             {'x': pipeX, 'y': gapY + self.pipe_gap} # lower pipe
-        ]
-
+        ], gapY
+    
     def checkCrash(self, player, upperPipes, lowerPipes):
         '''returns True if player collides with base or pipes'''
         pi = player['index']
@@ -264,16 +288,3 @@ class GameState:
                 if hitmask1[x1+x][y1+y] and hitmask2[x2+x][y2+y]:
                     return True
         return False
-
-    def showScore(self):
-        '''displays score in center of screen'''
-        scoreDigits = [int(x) for x in list(str(self.score))]
-        totalWidth  = 0 # width of numbers to be shown
-        for digit in scoreDigits:
-            totalWidth += IMAGES['numbers'][digit].get_width()
-
-        Xoffset = (SCREEN_W - totalWidth) / 2
-        for digit in scoreDigits:
-            SCREEN.blit(IMAGES['numbers'][digit], 
-                        (Xoffset, SCREEN_H * 0.1))
-            Xoffset += IMAGES['numbers'][digit].get_width()

@@ -61,10 +61,10 @@ K    = 1                # frames per action
 
 EPISODES     = 10          # number times to play game                         10000
 STEPS        = 200         # max steps per episode                        FPS * 3600
-OBSERVE      = STEPS       # observation steps pre training                STEPS * 5
+OBSERVE      = STEPS // 2  # observation steps pre training                STEPS * 5
 EXPLORE      = STEPS * 3   # steps to anneal epsilon                      STEPS * 30
-INIT_EPSILON = 0.3         # initial value of epsilon
-TERM_EPSILON = 0.001       # terminal value of epsilon
+INIT_EPSILON = .5         # initial value of epsilon
+TERM_EPSILON = 0.001        # terminal value of epsilon
 
 '''---Algorithm Parameters---'''
 TARGET       = 40          # goal; sets the bar for success
@@ -96,9 +96,6 @@ class Agent:
                         action_size = A,   
                         hidden_size = H)
 
-        '''---Initialize neural network---'''    
-        self.s, self.out, self.layer = self.RL.network()
-
         '''---Persistent tracking---'''
         self.buffer  = Buffer(BUF_SIZE, BATCH)          # replay memory
         self.R       = []            # tracks total episode rewards
@@ -109,6 +106,9 @@ class Agent:
         #self.im      = plt.figure()  # prepare frame for rendering
 
     def train(self, target = TARGET, mode = MODE):
+        '''---Initialize neural network---'''    
+        self.s, self.out, self.layer = self.RL.network()
+
         '''---Begin game emulation---'''
         for ep in range(1, EPISODES):
             '''---START EPISODE---'''
@@ -124,7 +124,7 @@ class Agent:
             wake = np.zeros(A)
             wake[0] = 1
             # color_img, reward, score, terminal -> empty
-            x_t_c, r_0, s_ep, terminal = self.game.step(wake)
+            x_t_c, r_0, r_ep, s_ep, terminal, msg = self.game.step(wake)
     
             '''Preprocess image data, and stack into state_size layers'''
             x_t = self.preprocess(x_t_c, t)             # gray_img', state'
@@ -160,10 +160,9 @@ class Agent:
                     idx  = maxQ
                 a_t[idx] = 1                      # set action
                 flap = False if a_t[0] else True 
-                #print('Step: {}  |  {}  |  Flap: {}'.\
-                #      format(t, meth, flap))
+                
                 '''---Send action to emulator---'''
-                x_t1_c, r_t, s_ep, terminal = self.game.step(a_t)
+                x_t1_c, r_t, r_ep, s_ep, terminal, msg = self.game.step(a_t)
                 x_t1 = self.preprocess(x_t1_c, t)
                 x_t1 = np.reshape(x_t1, (80, 80, 1))  # add channels dimension
                 self.s_t1 = np.append(self.s_t[:, :, :3], x_t1, axis=2)
@@ -175,6 +174,24 @@ class Agent:
                 self.add_exp(a_t, r_t, terminal)
                 self.saver  = tf.train.Saver(max_to_keep = 25)  # checkpoint
                 self.load_save(False)                           # restore 
+
+                print('Step: {}  |  {}  |  Flap: {}  |  Reward: {:.3f}  |  {}'.\
+                      format(t, meth, flap, r_t, msg))
+                '''---Check for game over---'''
+                if terminal: 
+                    # Display Episode Stats
+                    #print('  ___                   ___')         
+                    #print(' / __|__ _ _ __  ___   / _ \__ _____ _ _')
+                    #print('| (_ / _` | ''   \/ -_) | (_) \ V / -_) ''_|')
+                    #print(' \___\__,_|_|_|_\___|  \___/ \_/\___|_|')
+                    print('\nEpisode: {} '.format(ep),
+                        '| Score: {} '.format(s_ep),
+                        '| Steps: {} '.format(t), 
+                        '| Episode Reward: {:.3f} '.format(r_ep),
+                        '\n' + '-' * 56 + '\n\n')
+                    t = self.game_over(t, ep, r_ep, s_ep)
+                    continue
+                # log episode stats and flag episode as finished
     
                 '''---TRAINING LOOP---------------------------------------------'''
                 if self.step > OBSERVE:       # begin training
@@ -208,10 +225,7 @@ class Agent:
                                 y : y_bat,
                                 a : a_bat,
                                 self.s : s_j_bat }) 
-                #if terminal: plt.show()
-                '''---Check for game over---'''
-                if terminal: t = self.game_over(t, ep, r_ep, s_ep)
-                    # log episode stats and flag episode as finished
+                if terminal: plt.show()
 
                 '''---Save and log progress every 10000 steps---'''
                 # Parameter values have been slashed for testing
@@ -238,6 +252,7 @@ class Agent:
                     # Save frame as image
                     cv2.imwrite('logs/images/' + NAME + '_ep' + str(ep)\
                                 + '_frame' + str(t) + '.png', x_t_c)
+                
                 '''---Progress to next step/transition---'''
                 self.s_t = self.s_t1                    
 
@@ -326,15 +341,5 @@ class Agent:
         self.R.append((ep, r_ep))           # log episode reward
         self.Sc.append((ep, s_ep))          # log episode score
         self.T.append((ep, t))              # log episode steps
-        # Display Episode Stats
-        #print('  ___                   ___')         
-        #print(' / __|__ _ _ __  ___   / _ \__ _____ _ _')
-        #print('| (_ / _` | ''   \/ -_) | (_) \ V / -_) ''_|')
-        #print(' \___\__,_|_|_|_\___|  \___/ \_/\___|_|')
-        print('\n\nEpisode: {}'.format(ep),
-              '| Score: {}  '.format(s_ep),
-              '| Steps: {}  '.format(t), 
-              '| Episode Reward: {:.3f}  '.format(r_ep),
-              '\n' + '-' * 56)
         t = STEPS               # set as last step in episode
         return t
