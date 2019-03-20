@@ -166,8 +166,8 @@ class GameState:
                                 self.lowerPipes)
         if crash:
             self.terminal  = True   # set as last frame 
-            self.reward   -= 5      # very large penalty if crash occurs
-        else: self.reward += 0.1    # small reward for continued flying
+            self.reward -= 5      # very large penalty if crash occurs
+        else: self.reward += 0.01    # small reward for continued flying
         
         '''---Update screen to reflect state changes---'''
         SCREEN.blit(IMAGES['background'], (0,0))

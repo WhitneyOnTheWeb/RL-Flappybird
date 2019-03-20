@@ -36,10 +36,6 @@ class Buffer:
         e = self.experience(s, a, r, s_t, done)
         self.memory.append(e)
 
-    def popleft(self):
-        """Remove oldest entry in memory"""
-        self.memory.popleft()
-
     def sample(self, batch_size=64):
         """Randomly sample a batch of experiences from memory."""
         return random.sample(self.memory, k = self.batch_size)
