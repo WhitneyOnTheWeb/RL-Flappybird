@@ -59,12 +59,12 @@ K    = 1                # frames per action
 '''---Observation and Exploration---'''
 # Parameter values have been slashed for testing
 
-EPISODES     = 10          # number times to play game                         10000
-STEPS        = 200         # max steps per episode                        FPS * 3600
-OBSERVE      = STEPS // 2  # observation steps pre training                STEPS * 5
+EPISODES     = 10           # number times to play game                         10000
+STEPS        = 100         # max steps per episode                        FPS * 3600
+OBSERVE      = STEPS       # observation steps pre training                STEPS * 5
 EXPLORE      = STEPS * 3   # steps to anneal epsilon                      STEPS * 30
-INIT_EPSILON = .5         # initial value of epsilon
-TERM_EPSILON = 0.001        # terminal value of epsilon
+INIT_EPSILON = 0.1         # initial value of epsilon
+TERM_EPSILON = 0.0001      # terminal value of epsilon
 
 '''---Algorithm Parameters---'''
 TARGET       = 40          # goal; sets the bar for success
@@ -73,7 +73,7 @@ LR           = 0.01        # learning rate
 
 '''---Replay Memory---'''
 BUF_SIZE  = OBSERVE        # number of steps to track
-BATCH     = 32             # minibatch size                                       64
+BATCH     = 16             # minibatch size                                       64
 
 '''---Log Files---'''
 A_LOG  = open('learner/logs/action.log', 'w')   # actions log
@@ -110,7 +110,7 @@ class Agent:
         self.s, self.out, self.layer = self.RL.network()
 
         '''---Begin game emulation---'''
-        for ep in range(1, EPISODES):
+        for ep in range(1, EPISODES + 1):
             '''---START EPISODE---'''
             #print('---EPISODE {}--------------------------------------------'.\
             #      format(ep))
@@ -140,9 +140,9 @@ class Agent:
             while t < STEPS:  
                 t += 1                                   # limit episode max steps
                 self.step += 1                           # increment total steps
-                Qs = self.greedy([self.s_t])               # greedy maxQ policy
-                maxQ = np.argmax(Qs)            # exploit action
-                randQ = rand.randrange(A)       # explore action
+                Qs = self.greedy([self.s_t])             # greedy maxQ policy
+                maxQ = np.argmax(Qs)                     # exploit action
+                randQ = rand.randrange(A)                # explore action
                 '''---Check if observing or training---
                 * Observation period occurs once, spans across episodes
                 * Fills replay memory with random training data
@@ -150,15 +150,19 @@ class Agent:
                   * Determines Exploration or Exploitation probability'''
                 a_t = np.zeros([A])
                 
-                if rand.random() <= E or self.step <= OBSERVE:
-                    '''Explore if rand <= Epsilon or in observation period'''
-                    meth = 'Explore'              # always random if observing
-                    idx = randQ
-                else:
-                    '''Exploit knowledge from previous observations'''
-                    meth = 'Exploit'
-                    idx  = maxQ
-                a_t[idx] = 1                      # set action
+                if t % K == 0:
+                    if rand.random() <= E or self.step <= OBSERVE:
+                        '''Explore if rand <= Epsilon or in observation period'''
+                        meth = 'Explore'                 # always random if observing
+                        idx = randQ
+                    else:
+                        '''Exploit knowledge from previous observations'''
+                        meth = 'Exploit'
+                        idx  = maxQ
+                else: 
+                    meth = 'Wait'
+                    idx = 0                            # don't flap
+                a_t[idx] = 1                             # set action
                 flap = False if a_t[0] else True 
                 
                 '''---Send action to emulator---'''

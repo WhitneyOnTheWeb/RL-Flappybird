@@ -91,10 +91,7 @@ class GameState:
         self.playerMaxVelY =  10      # max vel along Y, max descend speed
         self.playerMinVelY =  -8      # min vel along Y, max ascend speed
         self.playerAccY    =   1      # players downward acceleration
-        self.playerRot     =  45      # player's rotation
-        self.playerVelRot  =   3      # angular speed
-        self.playerRotThr  =  20      # rotation threshold
-        self.playerFlapAcc =  -9      # players speed on flapping
+        self.playerFlapAcc =  -8      # players speed on flapping
         self.playerFlapped =  False   # True when player flaps
 
     def step(self, action):
@@ -109,25 +106,43 @@ class GameState:
 
         reward = 0
 
-        if action[1]:
+        if action[1] == 1:
             if self.playery > -2 * PLAYER_H:
                 self.playerVelY = self.playerFlapAcc
                 self.playerFlapped = True
 
         '''---Check if player is passing through pipes--'''
-        playerMidPos = self.playerx + PLAYER_W / 2
+        playerMidPos = self.playerx + PLAYER_W // 2
         for pipe in self.upperPipes:
-            pipeMidPos = pipe['x'] + PIPE_W / 2
+            pipeMidPos = pipe['x'] + PIPE_W // 2
             # Player is between the middle of pipes
             if pipeMidPos <= playerMidPos < pipeMidPos + 4:
-                self.score += 1      # player has scored
+                self.score += 1        # player has scored
                 reward += 1     # large reward for scoring
 
                 '''---Increase reward as score approaches target score---'''
-                if self.score >= self.target:           self.reward += 8
-                elif self.score >= self.target * 0.75:  self.reward += 5
-                elif self.score >= self.target * 0.5:   self.reward += 3
-                elif self.score >= self.target * 0.25:  self.reward += 2
+                if self.score >= self.target:           reward += 8
+                elif self.score >= self.target * 0.75:  reward += 5
+                elif self.score >= self.target * 0.5:   reward += 3
+                elif self.score >= self.target * 0.25:  reward += 2
+
+        # calculate reward based on distance above / below pipe gap
+        if self.gapPos[0]['btm'] > self.playery > self.gapPos[0]['top']:
+            reward += .3
+            msg = 'Stay here!'                             # reward
+        elif self.playery <= self.gapPos[0]['top'] + 10:   # penalize
+            msg = 'Go down!'
+            if self.playerFlapped:     # penalize for wrong action in position
+                reward += (self.playery - self.gapPos[0]['btm']) * 1e-4
+            elif not self.playerFlapped:   # reward recovery action
+                reward += -(self.playery - self.gapPos[0]['btm']) * 1e-4
+        elif self.playery >= self.gapPos[0]['btm'] - 10:
+            msg = 'Go up!'
+            if not self.playerFlapped: # penalize for wrong action in position
+                reward += (self.gapPos[0]['btm'] - self.playery) * 1e-4
+            elif self.playerFlapped:       # reward recovery action
+                reward += -(self.gapPos[0]['btm'] - self.playery) * 1e-4
+        else: msg = 'Almost right!'                        # no reward
 
         '''---Move basex index to the left---'''
         if (self.loopIter + 1) % 3 == 0:
@@ -135,21 +150,18 @@ class GameState:
         self.loopIter = (self.loopIter + 1) % 30
         self.basex = -((-self.basex + 100) % self.baseShift)
 
-        '''---Rotate player based on current angle and velocity---'''
-        if self.playerRot > -90:
-            self.playerRot -= self.playerVelRot
-
         '''---Adjust player velocity---
-        * Based on action and current position, rotation, and acceleration '''
+        * Based on action and current position, and acceleration '''
         if self.playerVelY < self.playerMaxVelY and not self.playerFlapped:
             self.playerVelY += self.playerAccY
         if self.playerFlapped:
             self.playerFlapped = False
-            self.playerRot = 45               # rotate to cover the threshold
+        #print('velY: {} | alt: {}'.format(self.playerVelY, BASE_Y - self.playery - PLAYER_H))
         self.playery += min(self.playerVelY, 
                             BASE_Y - self.playery - PLAYER_H)
-        if self.playery < 0:
+        if self.playery <= 0:
             self.playery = 0
+            if self.playerFlapped:  reward -= .2
 
         '''---Shift pipes to the left---'''
         for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
@@ -177,17 +189,7 @@ class GameState:
             self.terminal  = True    # set as last frame 
             reward = -3              # penalty if crash occurs
             msg = 'Boom, bitch!'
-        else: # calculate reward based on distance above / below pipe gap
-            if self.gapPos[0]['btm'] > self.playery > self.gapPos[0]['top']:
-                reward = .3
-                msg = 'Stay here!'                               # reward
-            elif self.playery <= self.gapPos[0]['top'] + 10:     # penalize
-                reward = (self.playery - self.gapPos[0]['btm']) * 1e-4
-                msg = 'Go down!'
-            elif self.playery >= self.gapPos[0]['btm'] - 10:
-                reward = (self.gapPos[0]['btm'] - self.playery) * 1e-4
-                msg = 'Go up!'
-            else: msg = 'Almost right!'                          # no reward
+        
         self.reward += reward
 
             #print('playery: {}  |  gap.top: {}  |  gap.btm: {}  |  {}'.\
@@ -204,10 +206,6 @@ class GameState:
 
         SCREEN.blit(IMAGES['base'], 
                     (self.basex, BASE_Y))
-
-        self.visibleRot = self.playerRotThr      # limit player rotation
-        if self.playerRot <= self.playerRotThr:
-            self.visibleRot = self.playerRot
 
         SCREEN.blit(IMAGES['player'][self.playerIndex], 
                     (self.playerx, self.playery))
