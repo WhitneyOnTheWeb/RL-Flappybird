@@ -62,9 +62,6 @@ class DeepQ:
         layer.width = 
             ((input.width - filter.width + 2 * padding) / stride) + 1
 
-        layer.height = 
-           ((input.height - filter.height + 2 * padding) / stride) + 1
-
         ---Convolution Kernel Template---
         [filter.width, filter.height, channels.input, channels.output] '''
 
