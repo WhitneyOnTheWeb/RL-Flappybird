@@ -25,19 +25,16 @@ from itertools import cycle
 import game.flappy_load as fl
 
 # Graphic Settings
-SCREEN_W  = 288
-SCREEN_H  = 512
-FPS       = 30
+SCREEN_W = 288
+SCREEN_H = 512
+FPSTICK  = 4
 
 pygame.init()
 FPSCLOCK  = pygame.time.Clock()
 SCREEN    = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption('Flappy Bird')
 
 # Obstacle Settings
-BASE_Y    = SCREEN_H * 0.79 # amount base can shift left
-
-# Game Assets
+BASE_Y   = SCREEN_H * 0.79 # amount base can shift left
 IMAGES, HITMASKS = fl.load()
 
 # Calculate Asset Sizes
@@ -49,12 +46,24 @@ BACKGROUND_W = IMAGES['background'].get_width()
 BACKGROUND_H = IMAGES['background'].get_height()
 BASE_W       = IMAGES['base'].get_width()
 
-# iterator used to change playerIndex after every 5th iteration
+# change player respawn x every 5th iteration
 PLAYER_INDEX_GEN = cycle([0, 1, 2, 1])
 
 class GameState:
-    def __init__(self, target_score = 40, difficulty = 'hard'):
+    def __init__(self, target_score = 40, difficulty = 'hard', fps = 30):
+        
+
         '''---Initialize New Game---'''        
+        self.name = 'FlappyBird'
+        self.icon = pygame.image.load('game/flappy.ico')
+        self.width = SCREEN_W
+        self.height = SCREEN_H
+        self.fps = fps
+        self.mode = difficulty
+
+        pygame.display.set_caption(self.name)
+        pygame.display.set_icon(self.icon)
+
         self.terminal = False
         self.score = self.reward = self.playerIndex = self.loopIter = 0
         self.playerx   = int(SCREEN_W * 0.2)
@@ -65,25 +74,24 @@ class GameState:
         self.pipe_gap  = self.set_mode(difficulty)  # gap between pipes
 
         # Randomly generate two sets of pipes
-        pipe1, gapY1 = self.get_random_pipe()
-        pipe2, gapY2 = self.get_random_pipe()
+        self.pipe1, self.gapY1 = self.get_random_pipe()
+        self.pipe2, self.gapY2 = self.get_random_pipe()
         self.upperPipes = [
             {'x': SCREEN_W, 
-             'y': pipe1[0]['y']},
+             'y': self.pipe1[0]['y']},
             {'x': SCREEN_W + (SCREEN_W / 2), 
-             'y': pipe2[0]['y']}]
+             'y': self.pipe2[0]['y']}]
         self.lowerPipes = [
             {'x': SCREEN_W, 
-             'y': pipe1[1]['y']},
+             'y': self.pipe1[1]['y']},
             {'x': SCREEN_W + (SCREEN_W / 2), 
-             'y': pipe2[1]['y']}]
+             'y': self.pipe2[1]['y']}]
         self.gapPos = [
-            {'top' : gapY1,   # gap pos for pipe set 1
-             'btm' : gapY1 + self.pipe_gap},
-            {'top' : gapY2,   # gap pos for pipe set 1
-             'btm' : gapY2 + self.pipe_gap},
+            {'top' : self.gapY1,   # gap pos for pipe set 1
+             'btm' : self.gapY1 + self.pipe_gap},
+            {'top' : self.gapY2,   # gap pos for pipe set 1
+             'btm' : self.gapY2 + self.pipe_gap},
         ]
-
 
         '''---Movement and action parameters'''
         '''!!!Updated physics parameters to limit rapid ascent when slowed to 30 FPS!!!'''
@@ -108,7 +116,7 @@ class GameState:
         if sum(action) != 1:          # validate action
             raise ValueError('Invalid action state!')
 
-        reward = .1 #reward getting another frame
+        reward = 1 #reward getting another frame
 
         if action[1] == 1:
             if self.playery > -2 * PLAYER_H:
@@ -122,27 +130,27 @@ class GameState:
             # Player is between the middle of pipes
             if pipeMidPos <= playerMidPos < pipeMidPos + 4:
                 self.score += 1        # player has scored
-                reward += 1     # large reward for scoring
+                reward += 200     # large reward for scoring
 
                 '''---Increase reward as score approaches target score---'''
-                if self.score >= self.target:           reward += 8
-                elif self.score >= self.target * 0.75:  reward += 5
-                elif self.score >= self.target * 0.5:   reward += 3
-                elif self.score >= self.target * 0.25:  reward += 2
+                if self.score >= self.target:           reward += 1000
+                elif self.score >= self.target * 0.75:  reward += 600
+                elif self.score >= self.target * 0.5:   reward += 400
+                elif self.score >= self.target * 0.25:  reward += 300
 
         if playerMidPos >= self.upperPipes[0]['x'] + PIPE_W // 2:
             gap = self.gapPos[0]
         else: gap = self.gapPos[1]           # gap to check against
         # calculate reward based on distance above / below pipe gap
-        if gap['btm'] - 4 > self.playery > gap['top'] + 4:
-            reward += .2
+        if gap['btm'] > self.playery > gap['top']:
+            reward += 5
             msg = 'Stay here!'                             # reward
         elif self.playery <= gap['top'] + 5:   # penalize
             msg = 'Go down!'
-            reward -= (self.playery - gap['btm']) * -.01
+            reward -= (gap['top'] - self.playery) *.01
         elif self.playery >= gap['btm'] - 5:
             msg = 'Go up!'
-            reward -= (gap['btm'] - self.playery) * -.001
+            reward -= (self.playery - gap['btm']) *.01
         else: msg = 'Almost right!'                        # no reward
 
         '''---Move basex index to the left---'''
@@ -162,7 +170,6 @@ class GameState:
                             BASE_Y - self.playery - PLAYER_H)
         if self.playery <= 0:
             self.playery = 0
-        if self.playery <= 20:  reward -= .2
 
         '''---Shift pipes to the left---'''
         for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
@@ -184,9 +191,17 @@ class GameState:
         crash = self.is_crash()
         if crash:
             self.terminal  = True    # set as last frame 
-            reward = -3   # penalty
+            if self.playery <= gap['top']: 
+                penalty = (gap['top'] - self.playery) * .1
+            elif self.playery >= gap['btm']:
+                penalty = (self.playery - gap['btm']) * .1
+            else: penalty = 1
+            reward -= (1 + penalty)   # penalty
             msg = 'Boom!'
-        
+
+        '''Scale and constrain reward values, add to episode reward'''
+        if reward < 0: reward = 0      # set negative reward to 0
+        reward = np.tanh(reward)       # reward between [-1, 1]
         self.reward += reward
 
         '''---Update screen to reflect state changes---'''
@@ -209,7 +224,7 @@ class GameState:
 
         '''---Progress to the next step---'''
         pygame.display.update()
-        FPSCLOCK.tick(FPS * 2)  # speed up play
+        FPSCLOCK.tick(self.fps * FPSTICK)  # speed up play
         
         return self.frame, reward, self.reward, self.score, self.terminal, msg
 
