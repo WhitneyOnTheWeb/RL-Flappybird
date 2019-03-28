@@ -1,7 +1,7 @@
 from collections import namedtuple, deque
+import time
 import random
 import numpy as np
-import copy
 '''
 Deep-Q Reinforcement Learning for Flappy Bird
 File:    experience_replay.py
@@ -23,22 +23,18 @@ class Buffer:
         """
         # Memory Stored as Deque
         self.memory = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
-        self.experience = namedtuple("Experience", 
-                                     field_names=["state", 
-                                                  "action", 
-                                                  "reward", 
-                                                  "next_state", 
-                                                  "done"])
+        print('{} | Experience Replay Memory Initialized...'.format(self.timestamp()))
 
+    def timestamp(self): return time.strftime('%Y-%m-%d@%H:%M:%S')
+    
     def add(self, s, a, r, s_t, done):
         """Add a new experience to memory."""
-        e = self.experience(s, a, r, s_t, done)
+        e = (s, a, r, s_t, done)
         self.memory.append(e)
 
-    def sample(self, batch_size=64):
+    def sample(self, batch_size = 32):
         """Randomly sample a batch of experiences from memory."""
-        return random.sample(self.memory, k = self.batch_size)
+        return random.sample(self.memory, batch_size)
 
     def reset(self):
         """Clear all experiences in memory"""
