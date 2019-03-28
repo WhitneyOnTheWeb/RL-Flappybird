@@ -9,7 +9,28 @@ Python 3.5 Anaconda Environment:
 
 conda update conda
 conda update --all
-conda create -n py35 python=3.5 conda=4.5.11 pip=10
+conda create -n py35 python=3.5 conda=4.5.11 pip=18
+
+
+
+
+Find Channels for Packages based on System and Python version:
+
+conda install binstar
+conda install anaconda-client
+anaconda search -t conda pygame
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
