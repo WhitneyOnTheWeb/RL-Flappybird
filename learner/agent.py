@@ -222,12 +222,14 @@ class Agent:
         print('{} | Keras Session Initialized (ID: {})...'.\
         format(timestamp(), self.sess_id))
 
-        '''---Load Saved Model and Variables---'''
-        try:
-            self.load_model(self.params)
-        except:
-            print('{} | No Saved Model Values to Load...'.\
-            format(timestamp()))
+        #'''---Load Saved Model---'''
+        # model weights loaded prior to model being compiled
+        # can be used if an entire model needs to be loaded
+        #try:
+        #    self.load_model(self.params)
+        #except:
+        #    print('{} | No Saved Models to Load...'.\
+        #    format(timestamp()))
 
     '''---BetaFlap Agent for Deep Reinforcement Learing Gameplay'''
     def play(self): 
@@ -336,20 +338,28 @@ class Agent:
 
 
     def load_model(self, p): 
-        p.model.nn.load_weights(p.saves + '\\' + p.name + '.h5')
-        print('{} | Model {}.h5 Successfully Loaded...'.\
+        p.model.nn.load('saved\\' + p.name + '_model.h5')
+        print('{} | Model {}_model.h5 Successfully Loaded...'.\
         format(timestamp(), p.name))
 
     def save_model(self, p):
-        p.model.nn.save_weights(p.saves + '/' + p.name + '.h5', 
-                                overwrite = True)
-        print('{} | {} Model Saved to {}.h5...'.\
+        '''---Save full model to single .h5 file---'''
+        p.model.nn.save(p.saves + '/' + p.name + '_model.h5', 
+                        overwrite = True)
+        print('{} | {} Model Saved to {}_model.h5...'.\
         format(timestamp(), p.alg, p.name))
 
+        '''---Save model weights to separate .h5 file---'''
+        p.model.nn.save_weights(p.saves +\
+        '/' + p.name + '_weights.h5', overwrite = True)
+        print('{} | {} Model Weights Saved in {}_weights.h5...'.\
+        format(timestamp(), p.alg, p.name))
+
+        '''---Save model structure as JSON file---'''
         with open(p.saves + '/' + p.name + '.json', 'w+') as f:
             json.dump(p.model.nn.to_json(), f)
         f.close()
-        print('{} | {} Model Parameters Logged as {}.json...'.\
+        print('{} | {} Model Structure Saved in {}.json...'.\
         format(timestamp(), p.alg, p.name))
 
 
