@@ -322,15 +322,12 @@ class Agent:
         '''---Exit PyGame and Close Session After Last Episode---'''                 
         p.game.quit_game()
         end = time.time()
-        elapsed = end - p.start
-        hours = int(elapsed)
-        minutes = (elapsed*60) % 60
-        seconds = (elapsed*3600) % 60
-        elapsed = '%dH:%02dM.%02dS' %\
-            (hours, minutes, seconds)
+        elapsed = time.gmtime(end - p.start)
+        elapsed = time.strftime('%H Hours %M Minutes %S Seconds', 
+                                elapsed)
         self.log_session(p, elapsed)
 
-        print('\n{} | Training Session Complete!'.format(timestamp))
+        print('\n{} | Training Session Complete!'.format(timestamp()))
         print('{} | Elapsed Time: {}'.format(timestamp(), (elapsed)))
         print('  ___                   ___')         
         print(' / __|__ _ _ __  ___   / _ \__ ______ _')

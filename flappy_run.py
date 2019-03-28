@@ -3,9 +3,9 @@ sys.path.append('/game')
 sys.path.append('/learner')
 import learner.agent as RL
 
-agent = RL.Agent(state_size           = 16,       # number of frames to stack
+agent = RL.Agent(state_size           = 24,       # number of frames to stack
                  frames_per_action    = 1,                 
-                 max_games            = 500,    # number times to play game
+                 max_games            = 5000,    # number times to play game
                  fps                  = 30,      # frames per second
                  max_game_minutes     = 10,                 
                  game_score_target    = 10,      # goal
@@ -17,8 +17,8 @@ agent = RL.Agent(state_size           = 16,       # number of frames to stack
                  save_every_n_steps   = 10000,   # save model every n steps
                  training             = False,    # observe then train if False
                  learn_rate           = 0.001,   # learning rate
-                 states_in_memory     = 10000,   # replay memory size
-                 training_sample_size = 32,      # experience sample size
+                 states_in_memory     = 1000000,   # replay memory size
+                 training_sample_size = 16,      # experience sample size
 )
 
 agent.play()
