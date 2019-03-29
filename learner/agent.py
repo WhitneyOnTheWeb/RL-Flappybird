@@ -115,7 +115,8 @@ class Parameters:
         self.FPS       = fps      
         self.episodes  = max_games  
         self.gif_score = keep_gif_for_score
-        self.steps     = self.FPS * max_game_minutes * 60  
+        self.steps     = self.FPS * max_game_minutes * 60
+        self.status    = 'play'
         self.mode      = game_difficulty
         self.target    = game_score_target
         self.game      = flappy.GameState(self.target, 
@@ -222,9 +223,17 @@ class Agent:
         print('{} | Keras Session Initialized (ID: {})...'.\
         format(timestamp(), self.sess_id))
 
-        #'''---Load Saved Model---'''
-        # model weights loaded prior to model being compiled
-        # can be used if an entire model needs to be loaded
+        '''---Load Saved Model / Weights---'''
+        try:
+            self.params.model.nn.load_weights('saved\\FlappyBird_model.h5')
+            print('{} | Stored Model Weights Loaded Successfully...'.\
+            format(timestamp()))
+        except:
+            print('{} | No Saved Model Weights to Load...'.\
+            format(timestamp()))
+
+        # model weights loaded as first priority since we have the model
+        # this can be used if an entire model needs to be loaded
         #try:
         #    self.load_model(self.params)
         #except:
@@ -243,7 +252,7 @@ class Agent:
             format(timestamp()))
 
         '''---Begin Playing Game Episodes---'''
-        for ep in range(1, p.episodes + 1):         
+        for ep in range(0, p.episodes):         
             p.ep_id        = uuid.uuid1()                   # unique episode ID
             p.r_ep         = 0
             p.t            = 0                   
@@ -253,7 +262,7 @@ class Agent:
             wake[0]        = 1                              # set action to none
 
             '''---Send Empty First Action to Emulator, Return State---'''
-            p.x_t_c, r_0, p.r_ep, p.s_ep, p.terminal, p.msg = p.game.step(wake)
+            p.x_t_c, r_0, p.r_ep, p.s_ep, p.terminal, p.msg, p.status = p.game.step(wake)
 
             '''---Preprocess State for Model Input---
                 * state is passed as a stack of four sequential frames
@@ -263,7 +272,7 @@ class Agent:
             p.s_t = np.stack([p.x_t] * p.S, axis = 2)
             p.s_t = np.reshape(p.s_t, (1, *p.s_t.shape))     #  [1, 80, 80, p.S]
                         
-            while p.t < p.steps:               # reset frame variables
+            while p.status != 'exit' and p.t < p.steps:               
                 p.t    += 1                    # limit episode frames
                 p.G    += 1                    # increment session frames
                 p.a_t   = np.zeros([p.A])      # reset to no action
@@ -280,12 +289,12 @@ class Agent:
                 p.flap = False if p.a_t[0] else True 
                 
                 '''---Send Action, then Preprocess Next State---'''
-                p.x_t1_c, p.r_t, p.r_ep, p.s_ep, p.terminal, p.msg = p.game.step(p.a_t)
+                p.x_t1_c, p.r_t, p.r_ep, p.s_ep, p.terminal, p.msg, p.status = p.game.step(p.a_t)
 
                 p.x_t1 = self.preprocess(p.x_t1_c, p)
                 p.x_t1 = np.reshape(p.x_t1, (80, 80, 1))  # channels dimension
-                p.s_t1 = np.append(p.x_t1, p.s_t[0, :, :, :p.S-1], axis = 2)
-                p.s_t1 = np.reshape(p.s_t1, (1, *p.s_t1.shape))  
+                p.s_t1 = np.append(p.x_t1,p.s_t[0, :, :, :p.S-1], axis = 2)
+                p.s_t1 = np.reshape(p.s_t1, (1, *p.s_t1.shape))
                 #print('Step: {}  |  {}  |  Flap: {}  |  Reward: {:.3f}  |  {}'.\
                 #      format(t, meth, flap, r_t, msg))
 
@@ -311,23 +320,36 @@ class Agent:
                 '''---Log Step Data---'''
                 self.log_state(ep, p)
 
+                '''---Check Keydown Status of Game Emulator---'''
+                if p.status == 'save':
+                    self.save_model(p)    # save model with CTRL+S
+
                 '''---Save Model Every (global_steps % n)---'''
                 if p.G % p.save == 0 \
                     or p.G == p.observe \
-                    or (ep == p.episodes + 1 and p.terminal):
+                    or (ep == p.episodes and p.terminal):
                     self.save_model(p)
 
                 '''---Proceed to Next Step/Transition/Frame---'''
                 p.s_t = p.s_t1
-               
 
+            if p.status == 'exit':
+                p.episodes = ep + 1   # flag as last episode
+                p.t = p.steps         # flag as last step
+                self.save_model(p)    # save and exit with ESC
+                self.end_session(p)   # quit pygame and log session
+                break
+
+        if p.status != 'exit': self.end_session(p)
+
+    def end_session(self, p):
         '''---Exit PyGame and Close Session After Last Episode---'''                 
-        p.game.quit_game()
+        p.game.quit_game()               # quit pygame after last episode
         end = time.time()
         elapsed = time.gmtime(end - p.start)
         elapsed = time.strftime('%H Hours %M Minutes %S Seconds', 
                                 elapsed)
-        self.log_session(p, elapsed)
+        self.log_session(p, elapsed)     # track session information
 
         print('\n{} | Training Session Complete!'.format(timestamp()))
         print('{} | Elapsed Time: {}'.format(timestamp(), (elapsed)))
@@ -434,6 +456,7 @@ class Agent:
 
     def game_over(self, ep, p):
         '''---Halt play, display stats, end current episode'''
+        ep +=1  # increment to correct episode number
         print('{} |   '.format(timestamp()),
                 'Game: {:<7}'.format(ep),
                 'Frames: {:<7}'.format(p.t), 
@@ -482,6 +505,7 @@ class Agent:
 
     def log_state(self, ep, p):
         '''---Log action, network, and frame information---'''
+        ep +=1  # increment to correct episode number
         game_log  = {
             'ep_id': p.ep_id, 'ep': ep, 'step': p.t, 
             'g_step': p.G, 'E': p.E,'target': p.target, 'score': p.s_ep,

@@ -127,14 +127,6 @@ class DeepQ:
         fp   = km.binary_false_positive()
         fn   = km.binary_false_negative()
 
-        try:
-            model.load_weights('saved\\FlappyBird_model.h5')
-            print('{} | Stored Model Weights Loaded Successfully...'.\
-            format(timestamp()))
-        except:
-            print('{} | No Saved Model Weights to Load...'.\
-            format(timestamp()))
-
         model.compile(loss = 'mse', 
                       optimizer = Adam(lr = lr), 
                       metrics = [acc, prec, re, f1, tp, tn, fp, fn])

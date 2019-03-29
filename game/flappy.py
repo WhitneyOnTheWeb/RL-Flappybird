@@ -17,6 +17,7 @@ References:
 
 import sys
 import pygame
+import pygame.locals
 import pygame.surfarray as surfarray
 import numpy as np
 import random as rand
@@ -110,6 +111,17 @@ class GameState:
         if self.terminal: self.__init__() 
 
         pygame.event.pump()
+        mod = pygame.key.get_mods()
+        status = 'play'
+
+        '''---Check for Human Input---'''
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    status = 'exit'
+                if event.key == pygame.K_s and mod & pygame.KMOD_CTRL:
+                    status = 'save'
+
         ''' Player Movement:
              action[0] == 1:  Don't Flap
              action[1] == 1:  Flap '''
@@ -226,7 +238,7 @@ class GameState:
         pygame.display.update()
         FPSCLOCK.tick(self.fps * FPSTICK)  # speed up play
         
-        return self.frame, reward, self.reward, self.score, self.terminal, msg
+        return self.frame, reward, self.reward, self.score, self.terminal, msg, status
 
     def set_mode(self, difficulty):
         '''Sets size of the gap between the upper and lower pipes'''
