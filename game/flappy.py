@@ -220,7 +220,8 @@ class GameState:
             msg = 'Boom!'
 
         '''Scale and constrain reward values, add to episode reward'''
-        reward = reward                       # reward between [-1, 1]
+        '''---Hyperbolic Tangent of Cumulative Reward---'''
+        reward = np.tanh(reward * .005) 
         self.reward += reward
 
         '''---Update screen to reflect state changes---'''
