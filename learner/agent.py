@@ -17,6 +17,7 @@ import game.flappy as flappy
 import matplotlib.pyplot as plt
 import matplotlib.image as img
 
+import learner.flappy_mongo as db
 from learner.experience_replay import Buffer
 from learner.deep_q import DeepQ
 from collections import deque
@@ -130,8 +131,9 @@ class Parameters:
         '''---Initialize Replay Memory---'''
         self.buffer   = states_in_memory
         self.batch    = training_sample_size
-        self.memory   = Buffer(self.buffer, self.batch)  # replay memory buffer
-
+        self.replay   = db.ReplayCollection(states_to_keep = self.buffer,
+                                            training_batch_size = self.batch)
+        self.memory   = Buffer(self.buffer, self.batch, self.replay)  # replay memory buffer
 
         '''---Session Tracking Parameters---'''
         self.R        = []                    # rewards across episodes
@@ -300,12 +302,13 @@ class Agent:
 
                 '''---Store Experience in Memory---'''
                 p.memory.add(p.s_t, p.a_t, p.r_t, p.s_t1, p.terminal)
+                #p.replay.add(p.s_t, p.a_t, p.r_t, p.s_t1, p.terminal)
                 p.r_ep += p.r_t                    # update total episode rewards
 
                 '''---Check for Game Over---''' 
-                if p.terminal:                   # if terminal frame
-                    self.game_over(ep, p)              # trigger game over
-                    continue                   # skip to next episode
+                if p.terminal:                     # if terminal frame
+                    self.game_over(ep, p)          # trigger game over
+                    continue                       # skip to next episode
      
                 '''---Check if Observing or Training---'''
                 if p.G > p.observe or p.training:    # train when done observing
@@ -335,7 +338,6 @@ class Agent:
 
             if p.status == 'exit':
                 p.episodes = ep + 1   # flag as last episode
-                p.t = p.steps         # flag as last step
                 self.save_model(p)    # save and exit with ESC
                 self.end_session(p)   # quit pygame and log session
                 break
@@ -343,15 +345,18 @@ class Agent:
         if p.status != 'exit': self.end_session(p)
 
     def end_session(self, p):
-        '''---Exit PyGame and Close Session After Last Episode---'''                 
-        p.game.quit_game()               # quit pygame after last episode
+        '''---Exit PyGame and Close Session After Last Episode---'''    
+        print('\n{} | Training Session Complete!'.format(timestamp()))             
+        p.game.quit_game()                # quit pygame after last episode
+        print('\n{} | Storing Memory in Replay DB...'.format(timestamp()))
+        self.store_experience(p)               
+        print('\n{} | Replay DB Successfully Updated...'.format(timestamp()))
+
         end = time.time()
         elapsed = time.gmtime(end - p.start)
         elapsed = time.strftime('%H Hours %M Minutes %S Seconds', 
                                 elapsed)
         self.log_session(p, elapsed)     # track session information
-
-        print('\n{} | Training Session Complete!'.format(timestamp()))
         print('{} | Elapsed Time: {}'.format(timestamp(), (elapsed)))
         print('  ___                   ___')         
         print(' / __|__ _ _ __  ___   / _ \__ ______ _')
@@ -359,6 +364,10 @@ class Agent:
         print(' \___\__,_|_|_|_\___|  \___/ \_/\___|_|')
 
 
+    def store_experience(self, p):
+        for i, x in enumerate(p.memory.memory):
+            p.replay.add(p.memory.memory[i])
+    
     def load_model(self, p): 
         p.model.nn.load('saved\\' + p.name + '_model.h5')
         print('{} | Model {}_model.h5 Successfully Loaded...'.\
@@ -409,6 +418,9 @@ class Agent:
     def replay(self, p):
         '''---Select Random Batch of Experience for Training---'''
         bat = p.memory.sample(p.batch)
+
+        '''!!!! Pick up here - the addition of Mongo Replay DB needs testing!!!!!!'''
+        #replay_bat = p.replay.random_sample(p.batch)
         # parse information from sample experience
         s_bat    = np.array([e[0][0, :, :, :,] for e in bat])  # states
         a_bat    = np.array([e[1] for e in bat])               # actions

@@ -97,11 +97,11 @@ class GameState:
         '''---Movement and action parameters'''
         '''!!!Updated physics parameters to limit rapid ascent when slowed to 30 FPS!!!'''
         self.pipeVelX = -4
-        self.playerVelY    =   0      # player's velocity along Y
-        self.playerMaxVelY =   5      # max vel along Y, max descend speed
-        self.playerMinVelY =  -4      # min vel along Y, max ascend speed
-        self.playerAccY    =   1      # players downward acceleration
-        self.playerFlapAcc =  -5      # players speed on flapping
+        self.playerVelY    =  0      # player's velocity along Y
+        self.playerMaxVelY = 10      # max vel along Y, max descend speed
+        self.playerMinVelY = -8      # min vel along Y, max ascend speed
+        self.playerAccY    =  1      # players downward acceleration
+        self.playerFlapAcc = -9      # players speed on flapping
         self.playerFlapped =  False   # True when player flaps
 
     def quit_game(self):
@@ -128,7 +128,12 @@ class GameState:
         if sum(action) != 1:          # validate action
             raise ValueError('Invalid action state!')
 
-        reward = 1 #reward getting another frame
+        if self.score >= 10: reward  = .35  #reward getting another frame
+        elif self.score >= 8: reward = .3
+        elif self.score >= 6: reward = .25
+        elif self.score >= 4: reward = .2
+        elif self.score >= 1: reward = .15
+        else: reward = .1
 
         if action[1] == 1:
             if self.playery > -2 * PLAYER_H:
@@ -142,27 +147,29 @@ class GameState:
             # Player is between the middle of pipes
             if pipeMidPos <= playerMidPos < pipeMidPos + 4:
                 self.score += 1        # player has scored
-                reward += 200     # large reward for scoring
+                reward += 10     # large reward for scoring
 
                 '''---Increase reward as score approaches target score---'''
-                if self.score >= self.target:           reward += 1000
-                elif self.score >= self.target * 0.75:  reward += 600
-                elif self.score >= self.target * 0.5:   reward += 400
-                elif self.score >= self.target * 0.25:  reward += 300
+                if self.score >= self.target:           reward += 40
+                elif self.score >= self.target * 0.75:  reward += 30
+                elif self.score >= self.target * 0.5:   reward += 20
+                elif self.score >= self.target * 0.25:  reward += 10
 
         if playerMidPos >= self.upperPipes[0]['x'] + PIPE_W // 2:
             gap = self.gapPos[0]
         else: gap = self.gapPos[1]           # gap to check against
+
+        '''!!! Tested and Removed Positional Reward/Penalty !!!'''
         # calculate reward based on distance above / below pipe gap
         if gap['btm'] > self.playery > gap['top']:
-            reward += 5
+            reward += .01
             msg = 'Stay here!'                             # reward
-        elif self.playery <= gap['top'] + 5:   # penalize
+        elif self.playery <= gap['top'] - 5:   # penalize
             msg = 'Go down!'
-            reward -= (gap['top'] - self.playery) *.01
-        elif self.playery >= gap['btm'] - 5:
+            reward -= (gap['top'] - self.playery) *.001
+        elif self.playery >= gap['btm'] + 5:
             msg = 'Go up!'
-            reward -= (self.playery - gap['btm']) *.01
+            reward -= (self.playery - gap['btm']) *.001
         else: msg = 'Almost right!'                        # no reward
 
         '''---Move basex index to the left---'''
@@ -200,20 +207,20 @@ class GameState:
             self.lowerPipes.pop(0)
 
         '''---Check if bird has collided with a pipe or the ground---'''
+        #if reward < 0: reward = 0             # set negative reward to 0
         crash = self.is_crash()
         if crash:
             self.terminal  = True    # set as last frame 
-            if self.playery <= gap['top']: 
-                penalty = (gap['top'] - self.playery) * .1
-            elif self.playery >= gap['btm']:
-                penalty = (self.playery - gap['btm']) * .1
+            if self.playery <= gap['top'] - 5: 
+                penalty = 1 + (gap['top'] - self.playery) * 0.1
+            elif self.playery >= gap['btm'] + 5:
+                penalty = 1 + (self.playery - gap['btm']) * 0.1
             else: penalty = 1
-            reward -= (1 + penalty)   # penalty
+            reward = -(5 * penalty)          # penalty for crashing
             msg = 'Boom!'
 
         '''Scale and constrain reward values, add to episode reward'''
-        if reward < 0: reward = 0      # set negative reward to 0
-        reward = np.tanh(reward)       # reward between [-1, 1]
+        reward = reward                       # reward between [-1, 1]
         self.reward += reward
 
         '''---Update screen to reflect state changes---'''
