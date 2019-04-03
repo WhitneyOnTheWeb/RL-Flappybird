@@ -200,7 +200,7 @@ class CustomDQN(AbstractDQNAgent):
             t = step['t']
 
             '--- Send empty first action to game env, get output---'
-            x, sc, terminal, status = game.step(episode['wake'], t)
+            x, terminal, status = game.step(episode['wake'])
             x_t = util.preprocess_input(x)
             step['state'] = util.create_state(x_t, params)
             session['status'] = status
@@ -216,7 +216,7 @@ class CustomDQN(AbstractDQNAgent):
                     util.get_action(x_t, params)
 
                 '--- Do next step and reshape as model input state'
-                x1, sc, terminal, status = game.step(step['action'], t)
+                x1, params = game.step(step['action'], params)
                 x1_t = util.preprocess_input(x1)
                 step['next'] = util.create_state(x1_t, params)
                 step['terminal'] = terminal
@@ -227,7 +227,7 @@ class CustomDQN(AbstractDQNAgent):
 
                 '--- Update episode / session parameter values'
                 episode.update({
-                    'score': sc,
+                    'score': game['track']['score'],
                     'reward': episode['reward'] + step['reward'],
                     'steps': step['t'],
                 })

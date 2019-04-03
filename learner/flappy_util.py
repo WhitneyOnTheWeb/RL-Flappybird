@@ -109,9 +109,6 @@ class Parameter(dict):
 
         settings = self['game']['settings']
         player = settings['player']
-        pipe = settings['pipe']
-        screen = settings['screen']
-        track = settings['track']
 
         player.update({
             'x_mid': player['x'] + (player['w'] // 2),
