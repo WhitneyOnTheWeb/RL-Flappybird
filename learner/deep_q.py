@@ -1,13 +1,25 @@
 import math
 import time
 import numpy as np
-import random as rand  
-import tensorflow as tf
+import random as rand
+
+from keras import metrics
 import keras_metrics as km
-import tensorflow.keras as keras
-from keras.optimizers import SGD, Adam
+from keras.optimizers import SGD, Adam, Adamax, Adadelta, RMSprop
+from keras.regularizers import l2
+from keras.initializers import Constant
 from keras.models import model_from_json, Sequential, Model
-from keras.layers import Conv2D, MaxPool2D, ReLU, Dense, Flatten, InputLayer
+from keras.layers import Conv2D, MaxPool2D, Dense, Flatten, LeakyReLU
+from keras.layers import Input, InputLayer, ReLU, Softmax, BatchNormalization
+from keras.applications import VGG16, ResNet50
+from keras.preprocessing import image
+
+from rl.agents.dqn import DQNAgent
+from rl.agents.ddpg import DDPGAgent
+from rl.agents.sarsa import SARSAAgent
+from rl import memory, policy
+from rl.util import huber_loss
+
 
 '''
 Deep-Q Reinforcement Learning for Flappy Bird
@@ -17,15 +29,6 @@ Date:    March 9, 2019
 
 References:
 
-    Deep Learning Video Games 
-    Author: Akshay Srivatsan
-    github.com/asrivat1/DeepLearningVideoGames/blob/master/\
-        deep_q_network.py
-
-    Using Deep-Q Network to Learn to Play Flappy Bird
-    Author: Kevin Chen
-    github.com/yenchenlin/DeepLearningFlappyBird
-
     Visualizing Neural Network Activation
     Author: Arthur Juliani
     medium.com/@awjuliani/visualizing-neural-network-layer-activation-\
@@ -34,103 +37,115 @@ References:
     Udacity ML Engineer Quadcopter Project
     github.com/WhitneyOnTheWeb/deep-learning-master/blob/master/\
         Quadcopter/tasks/takeoff.py
+
+    Keras Reinforcement Learning
+    github.com/keras-rl/keras-rl
 '''
+# @misc{plappert2016kerasrl,
+#       author = {Matthias Plappert},
+#       title = {keras-rl},
+#       year = {2016},
+#       publisher = {GitHub},
+#       journal = {GitHub repository},
+#       howpublished = {\url{https://github.com/keras-rl/keras-rl}},
+# }
+
+
 class DeepQ:
-    def __init__(self, 
-                 S = 4,
-                 A = 2, 
-                 H = 64,
-                 lr = 0.001):
+    def __init__(self,
+                 S=4,
+                 A=2,
+                 H=64,
+                 lr=0.01,
+                 loss='logcosh',
+                 opt='adam',
+                 model='custom'):
 
-        super(DeepQ, self).__init__()  
-        self.nn = self._assemble(S, A, H, lr)
-
-    def _assemble(self, S, A, H, lr):
-        '''---Deep-Q Neural Network Architecture---
-
-        * Defines input layer
-        * Set weight/bias of layer convolutions
-
-        Convolution Formula for Outputs:
-        * layer.width and layer.height are the same when the input is square
-
-        layer.width = 
-            ((input.width - filter.width + 2 * padding) / stride) + 1
-
-        ---Convolution Kernel Template---
-        [filter.width, filter.height, channels.input, channels.output] '''
-        
-        '''---Convolution Layer and Sequence Architecture---
-
-        * Play arounds with these layers to see what works best
-        * Don't forget to change references when creating layers
-            * Each transformation should reference the previous one
-
-        '''
-        shape = (80, 80, S)
-        model = Sequential()
-        MaxPooling2D = MaxPool2D(pool_size = (2, 2),
-                                 strides = (2, 2),
-                                 padding = 'same')
-            # [?, 80, 80, 4] -> [20 x 20 x 64]
-        model.add(InputLayer(input_shape = shape))
-        model.add(Conv2D(filters = H,
-                  kernel_size = (8, 8),
-                  strides = (4, 4),
-                  use_bias = True,
-                  bias_initializer = keras.initializers.Constant(value = H),
-                  padding = 'same',
-                  kernel_regularizer = keras.regularizers.l2(0.0001)))
-        model.add(ReLU())
-            # [20 x 20 x 64] -> [1, 2, 2, 1] -> [10 x 10 x 64]
-        model.add(MaxPooling2D)
-            # [10 x 10 x 64] -> [4, 4, 64, 128] -> [5 x 5 x 128]    
-        model.add(Conv2D(filters = H * 2,
-                  kernel_size = (4, 4),
-                  strides = (2, 2),
-                  use_bias = True,
-                  bias_initializer = keras.initializers.Constant(value = H * 2),
-                  padding = 'same',
-                  kernel_regularizer = keras.regularizers.l2(0.001)))
-        model.add(ReLU())
-            # [5 x 5 x 128] -> [1, 2, 2, 1] -> [3 x 3 x 128]    
-        model.add(MaxPooling2D)
-
-        model.add(Conv2D(filters = H,
-                  kernel_size = (3, 3),
-                  strides = (1, 1),
-                  use_bias = True,
-                  bias_initializer = keras.initializers.Constant(value = H),
-                  padding = 'same',
-                  kernel_regularizer = keras.regularizers.l2(0.01)))
-        model.add(ReLU())
-            # [3 x 3 x 64] -> [1, 2, 2, 1] -> [2 x 2 x 64]
-        model.add(MaxPooling2D)
-            # [2 x 2 x 64] -> [1, 256]
-        model.add(Flatten())
-        model.add(ReLU())
-
-        '''---Sequence 4: Flatten and Fully Connect ReLU Layers for Output---
-            * Dimension should be equal to the number of actions
-                - Flap
-                - Don't Flap'''
-            # [1, 256] -> [None, 2]
-        model.add(Dense(A, activation = 'linear'))
-
-        '''---Compile the model for use---'''
-        acc  = 'accuracy'
+        super(DeepQ, self).__init__()
+        self.shape = (80, 80, S)
         prec = km.binary_precision()
-        re   = km.binary_recall()
-        f1   = km.binary_f1_score()
-        tp   = km.binary_true_positive()
-        tn   = km.binary_true_negative()
-        fp   = km.binary_false_positive()
-        fn   = km.binary_false_negative()
+        re = km.binary_recall()
+        f1 = km.binary_f1_score()
+        #tp   = km.binary_true_positive()
+        #tn   = km.binary_true_negative()
+        #fp   = km.binary_false_positive()
+        #fn   = km.binary_false_negative()
 
-        model.compile(loss = 'mse', 
-                      optimizer = Adam(lr = lr), 
-                      metrics = [acc, prec, re, f1, tp, tn, fp, fn])
+        if model == 'vgg16':
+            self.nn = VGG16()
+        if model == 'resnet50':
+            self.nn = ResNet50()
+        else:
+            '''---Compile the model for use---'''
+            self.nn = self._create_model(S, A, H, lr)
+            if opt == 'adamax':
+                optim = Adamax(lr=1)
+            elif opt == 'adadelta':
+                optim = Adadelta()
+            elif opt == 'SGD':
+                optim = SGD(lr=.01, momentum=.01, decay=.0001)
+            elif opt == 'rmsprop':
+                optim = RMSprop()
+            else:
+                optim = Adam(lr=.001)
+
+            self.nn.compile(
+                loss=loss,
+                optimizer=optim,
+                metrics=['accuracy', prec, re, f1]
+            )
+
+    def _create_model(self, S, A, H, lr, alpha=0.05, reg=0.01):
+        inputs = Input(shape=self.shape)
+
+        x = Conv2D(filters=H,
+                   kernel_size=(8, 8),
+                   strides=(4, 4),
+                   use_bias=True,
+                   bias_initializer=Constant(value=H),
+                   padding='same',
+                   kernel_regularizer=l2(reg)
+                   )(inputs)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=alpha)(x)
+        x = MaxPool2D(pool_size=(2, 2),
+                      strides=(2, 2))(x)
+
+        x = Conv2D(filters=H * 2,
+                   kernel_size=(4, 4),
+                   strides=(2, 2),
+                   use_bias=True,
+                   bias_initializer=Constant(value=H * 2),
+                   padding='same',
+                   kernel_regularizer=l2(reg)
+                   )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=alpha)(x)
+        x = MaxPool2D(pool_size=(2, 2),
+                      strides=(2, 2))(x)
+
+        x = Conv2D(filters=H,
+                   kernel_size=(3, 3),
+                   strides=(1, 1),
+                   use_bias=True,
+                   bias_initializer=Constant(value=H),
+                   padding='same',
+                   kernel_regularizer=l2(reg)
+                   )(x)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=alpha)(x)
+        x = MaxPool2D(pool_size=(2, 2),
+                      strides=(2, 2))(x)
+
+        x = Flatten()(x)
+        x = Dense(256, activation='relu', kernel_regularizer=l2(reg))(x)
+        x = Dense(256, activation='relu', kernel_regularizer=l2(reg))(x)
+        x = Dense(256, activation='relu', kernel_regularizer=l2(reg))(x)
+        x = Dense(A, activation='linear', kernel_regularizer=l2(reg))(x)
+
+        model = Model(inputs=inputs, outputs=x)
+
         return model
 
-    
+
 def timestamp(): return time.strftime('%Y-%m-%d@%H:%M:%S')

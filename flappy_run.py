@@ -1,24 +1,91 @@
-import sys
-sys.path.append('/game')
-sys.path.append('/learner')
-import learner.agent as RL
+from learner.flappy_util import Parameter, Utility
 
-agent = RL.Agent(state_size           = 8,       # number of frames to stack
-                 frames_per_action    = 1,                 
-                 max_games            = 50,    # number times to play game
-                 fps                  = 30,      # frames per second
-                 max_game_minutes     = 2,                 
-                 game_score_target    = 10,      # goal
-                 keep_gif_for_score   = 3,       # game score bar to keep GIF
-                 initial_epsilon      = 0.1,     # start random action probability
-                 terminal_epsilon     = 0.0001,  # end random action probability
-                 observation_steps    = 1000,    # steps pre training
-                 exploration_steps    = 50000,  # epsilon decay duration
-                 save_every_n_steps   = 10000,   # save model every n steps
-                 training             = False,   # observe then train if False
-                 learn_rate           = 0.001,   # learning rate
-                 states_in_memory     = 5000,  # replay memory size
-                 training_sample_size = 32,      # experience sample size
-)
+'supported agents:' 
+# CustomDQ, DQN, DDPG, SARSA, CEM
+'supported models:' 
+# custom, VGG16, ResNet50
+'supported processors:' 
+# MultiInput, WhiteningNormalizer, None
+'supported policy:'
+ # BoltzmannQ, MaxBlotzmannQ, LinearAnnealed, Softmax, EpsGreedyQ, GreedyQ
+'supported memory:' 
+# RingBuffer, Sequential, EpisodeParameter
+'supported optimizers:'
+# Adam, Adamax, Adadelta, SGD, RMSprop
+'supported loss functions:'
+# there are many options, suggestions:  logcosh, mse, binary_crossentropy, poisson
+inputs = {
+    'game': {
+        'name': 'FlappyBird',
+        'fps': 30,
+        'fps_tick': 2,
+        'target': 40,
+        'difficulty': 'hard',   # easy / medium / hard
+    },
+    'agent': {  
+        'name': 'Custom',       # custom model: Keras CNN
+        'processor': None, 
+        'action_size': 2,
+        'max_episodes': 20000,
+        'max_time': 5,               # minutes
+        'keep_gif_score': 4,
+        'memory': {
+            'mem_type': 'Sequential',
+            'limit': 50000,
+            'interval': 1,
+        },
+        'model': {
+            'name': 'Custom',
+            'state_size': 8,
+            'filter_size': 64,
+            'learning_rate': 0.001,
+            'regulizer': 0.01,
+            'alpha': 0.05,
+            'gamma': 0.99,          # reward discount factor
+            'momentum': 0.01,
+            'decay': 0.001,
+            'noise_amp': 0.1,
+            'loss_function': 'logcosh',
+            'optimizer': 'adadelta',
+            'policy': 'BoltzmannQ',
+            'test_policy': 'MaxBoltzmannQ',
+            'multiprocess': True,
+            'dueling_network': True,    # DQN
+            'dueling_type': 'avg',      # DQN
+            'double_dqn': True,         # DQN
 
-agent.play()
+            'train': {
+                'fpa': 1,
+                'begin': False,
+                'batch_size': 32,
+                'batch_idx': None,          # sample [idxs]. None = random
+                'initial_epsilon': .2,
+                'terminal_epsilon': 0.0001,
+                'anneal': 500000,           # steps to cool down epsilon
+                'epochs': 10,
+                'split': .2,
+                'validate': True,
+                'shuffle': True,
+                'verbose': 0,               # 0, 1, or 2
+                'interval': 1,
+                'warmup': 1000,
+            },
+
+            'save': {
+                'path': 'saved',
+                'file_name': 'flappy_model',
+                'interval': 15000,
+                'full': False,
+                'weights': True,
+                'json': True,
+                'viz': True,
+    }}},
+    'log': {
+        'path': 'logs',
+        'file_type': '.json',    # .json, .csv, .tsv, .log,..., mongodb
+        'log_step': True,
+        'log_episode': True,
+        'log_session': True,
+}}
+
+params = Parameter(inputs)
