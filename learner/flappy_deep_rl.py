@@ -165,9 +165,9 @@ class CustomDQN(AbstractDQNAgent):
     def init(self, nb_actions, memory, **kwargs):
         super(CustomDQN, self).__init__(**kwargs)
 
-    def run(self, params, util):
+    def run(self, params, env, util):
         agent = params['agent']
-        game = params['game']['env']
+        game = env
         session = params['session']
         model = agent['model']
         save = model['save']
@@ -177,6 +177,7 @@ class CustomDQN(AbstractDQNAgent):
         step = episode['step']
         gif = episode['gif']
         image = step['image']
+        settings = params['game']['settings']
 
         if not train['begin']:
             util.display_status('Beginning Warmup Period')
@@ -200,10 +201,11 @@ class CustomDQN(AbstractDQNAgent):
             t = step['t']
 
             '--- Send empty first action to game env, get output---'
-            x, terminal, status = game.step(episode['wake'])
+            x, game_out = game.step(episode['wake'])
+            util.update_nested_dict(settings, game_out)
+
             x_t = util.preprocess_input(x)
             step['state'] = util.create_state(x_t, params)
-            session['status'] = status
 
             '--- Begin stepping through game frame by frame'
             while session['status'] != 'exit' and t < episode['steps']:
@@ -216,11 +218,13 @@ class CustomDQN(AbstractDQNAgent):
                     util.get_action(x_t, params)
 
                 '--- Do next step and reshape as model input state'
-                x1, params = game.step(step['action'], params)
+                x1, game_out = game.step(step['action'])
+                util.update_nested_dict(settings, game_out)
+
                 x1_t = util.preprocess_input(x1)
                 step['next'] = util.create_state(x1_t, params)
-                step['terminal'] = terminal
-                session['status'] = status
+                step['terminal'] = settings['track']['crash']
+                session['status'] = settings['track']['status']
 
                 '--- Calculate reward for game action-state'
                 util.get_reward(game, step)
@@ -252,7 +256,7 @@ class CustomDQN(AbstractDQNAgent):
                     memory.append(util.get_replay(step, train))
 
                 '--- Check for Game Over'
-                if terminal:                  # if terminal frame
+                if step['terminal']:                  # if terminal frame
                     util.game_over(params)    # trigger game over
                     continue                  # skip to next episode
 

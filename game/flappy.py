@@ -14,87 +14,118 @@ References:
     Author: Sourabh Verma
     github.com/sourabhv/FlapPyBird
 '''
-
 import sys
+sys.path.append('../')
+sys.path.append('../learner')
+sys.path.append('/learner')
 import pygame
 import pygame.locals
 import pygame.surfarray as surfarray
 import numpy as np
 import random as rand
+import pprint as pp
 from pygame.locals import *
 from itertools import cycle
 import game.flappy_load as fl
+import collections
 
+
+pygame.init()
 # Graphic Settings
 SCREEN_W = 288
 SCREEN_H = 512
+CLOCK = pygame.time.Clock()
+SCREEN = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+pygame.display.set_caption('Flappy Bird')
+pygame.display.set_icon(pygame.image.load('game/flappy.ico'))
 IMAGES, HITMASKS = fl.load()
 
 class Environment:    
-    def __init__(self, params=None, **kwargs): 
-        pygame.init()
-        game = params['game']
-
+    def __init__(self, user_setting, util, **kwargs): 
         '''---Initialize New Game---'''
-        game['settings'].update({
+        if util != None: 
+            self.util = util
+
+        self.u_s = user_setting
+
+        self.settings = {
             'screen': {
-                'icon': pygame.image.load('game/flappy.ico'),
-                'display': pygame.display.set_mode((SCREEN_W, SCREEN_H)),
+                'h': SCREEN_H,
+                'w': SCREEN_W,
+                'background_w': IMAGES['background'].get_width(),
+                'base_x': 0,
+                'base_y': SCREEN_H * 0.79,
+                'base_w': IMAGES['base'].get_width(),
+                'base_sft': IMAGES['base'].get_width() - \
+                            IMAGES['background'].get_width(),
             },
-            'pygame': {'clock': pygame.time.Clock()},
-            'player': {'idx_gen': cycle([0, 1, 2, 1])},
+            'pygame': {
+                'clock': CLOCK,
+                'target': user_setting['target'],
+                'fps': user_setting['fps'],
+                'tick': user_setting['tick'],
+                'difficulty': user_setting['difficulty'],
+                'name': user_setting['name'],
+            },
+            'player': {
+                'x': int(SCREEN_W * 0.2),
+                'y': int((SCREEN_H - IMAGES['player'][0].get_height()) // 2),
+                'h': IMAGES['player'][0].get_height(),
+                'w': IMAGES['player'][0].get_width(),
+                'idx_gen': cycle([0, 1, 2, 1]),
+                'idx': 0,
+                'y_vel':-9,        # player's velocity along Y
+                'y_vel_max': 10,   # max vel along Y, max descend speed
+                'y_vel_min': -8,   # min vel along Y, max ascend speed
+                'y_acc': 1,        # players downward acceleration
+                'rot': 45,         # player's rotation
+                'rot_vel': 3,      # angular speed
+                'rot_thr': 20,     # rotation threshold
+                'flap_acc': -9,    # players speed on flapping
+                'flapped': False,  # True when player flaps
+            },
             'pipe': {
+                'x_vel': -4,
+                'h': IMAGES['pipe'][0].get_height(),
+                'w': IMAGES['pipe'][0].get_width(),
                 'gap': {
-                    'size': self.set_mode(game['difficulty']),
-                    'loc': {},
+                    'size': self.set_mode(user_setting['difficulty']),
+                    'loc': [],
                 },
-                'upper': {},
-                'lower': {},
-        }})
+                'upper': [],
+                'lower': [],
 
-        settings = game['settings']
-        pipe = settings['pipe']
-        screen = settings['screen']
+            },
+            'track': {
+                'scored': False,
+                'score': 0,
+                'status': 'play',
+                'crash': False,
+                'loopIter': 0,
+        }}
 
-        pygame.display.set_caption(settings['name'])
-        pygame.display.set_icon(screen['icon'])
+        self.screen = self.settings['screen']
+        self.player = self.settings['player']
+        self.track = self.settings['track']
+        self.pipe = self.settings['pipe']
+        self.gap = self.pipe['gap']
+        
+        self.player.update({
+            'x_mid': self.player['x'] + (self.player['w'] // 2),
+            'x_right': self.player['x'] + self.player['w'],
+            'y_mid': self.player['y'] + (self.player['h'] // 2),
+            'y_btm': self.player['y'] + self.player['h'], 
+            'vis_rot': self.player['rot_thr'],
+        })
 
         # Randomly generate two sets of pipes
-        pipe1, gapY1 = self.get_random_pipe(pipe, screen)
-        pipe2, gapY2 = self.get_random_pipe(pipe, screen)
-        game['settings']['pipe']['upper'].update([ 
-          { 'x': screen['w'],
-            'x_mid': screen['w'] + (pipe['w'] // 2),
-            'x_right': screen['w'] + pipe['w'], 
-            'y': pipe1[0]['y'] },
-          { 'x': screen['w'] + (screen['w'] // 2),
-            'x_mid': (screen['w'] + (screen['w'] // 2)) + \
-                (pipe['w'] // 2),
-            'x_right': (screen['w'] + (screen['w'] // 2)) + \
-                pipe['w'], 
-            'y': pipe2[0]['y'] }])
+        pipe1, gapY1 = self.get_random_pipe(self.pipe)
+        pipe2, gapY2 = self.get_random_pipe(self.pipe)
+        self.pipe['upper'] = [pipe1[0], pipe2[0]]
+        self.pipe['lower'] = [pipe1[1], pipe2[1]]
+        self.pipe['gap']['loc'] = [gapY1, gapY2]
 
-        game['settings']['pipe']['lower'].update([
-            { 'x': screen['w'],
-              'x_mid': screen['w'] + (pipe['w'] // 2),
-              'x_right': screen['w'] + pipe['w'], 
-              'y': pipe1[1]['y'] },
-            { 'x': screen['w'] + (screen['w'] // 2),
-              'x_mid': (screen['w'] + (screen['w'] // 2)) + \
-                  (pipe['w'] // 2),
-              'x_right': (screen['w'] + (screen['w'] // 2)) + \
-                  pipe['w'], 
-              'y': pipe2[1]['y'] }])
-
-        game['settings']['pipe']['gap']['loc'].update([
-            { 'top': gapY1,   # gap pos for pipe set 1
-              'mid': gapY1 + (pipe['gap']['size'] // 2),
-              'btm': gapY1 + pipe['gap']['size'] },
-            { 'top': gapY2,   # gap pos for pipe set 1
-              'mid': gapY2 + (pipe['gap']['size'] // 2),
-              'btm': gapY2 + pipe['gap']['size'] }])
-
-        for pipe in np.append(pipe['upper'], pipe['lower']):
+        for pipe in np.append(self.pipe['upper'], self.pipe['lower']):
             left, right = self.get_pipe_corners(pipe)
             pipe.update({
                 'corners': {
@@ -102,157 +133,19 @@ class Environment:
                     'right': right,
             }})
 
+
     def get_pipe_corners(self, pipe):
         left = [pipe['x'], pipe['y']]
         right = [pipe['x_right'], pipe['y']]
         return left, right
     
-    def quit_game(self):
-        pygame.quit()
-
-    def step(self, action, params):
-        settings = params['game']['settings']
-        env = settings['pygame']
-        screen = settings['screen']
-        track = settings['track']
-        player = settings['player']
-        pipe = settings['pipe']
-        gap = pipe['gap']
-        t = params['session']['episode']['step']['t']
-
-        if track['crash']:    # bird crashed!
-            self.__init__()
-
-        pygame.event.pump()
-        mod = pygame.key.get_mods()
-        track.update({
-            'status': 'play',
-            'scored': False,
-        })
-
-        '''---Check for Human Input---'''
-        for event in pygame.event.get():
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    track['status'] = 'exit'
-                if event.key == pygame.K_s and mod & pygame.KMOD_CTRL:
-                    track['status'] = 'save'
-
-        ' Rotate the player'
-        if player['rot'] > -90:
-            player['rot'] -= player['rot_vel']
-
-        ''' Player Movement:
-             action[0] == 1:  Don't Flap
-             action[1] == 1:  Flap '''
-        if sum(action) != 1:          # validate action
-            raise ValueError('Invalid action state!')
-
-        if action[1] == 1:
-            if player['y']> -2 * player['h']:
-                player['y_vel'] = player['flap_acc']
-                player['flapped'] = True
-
-        '''---Check if player is passing through pipes--'''
-        player['x_mid'].update(player['x'] + player['w'] // 2)
-        for pipe in pipe['upper']:
-            pipe['x_mid'].update(pipe['x'] + pipe['w'] // 2)
-            # Player is between the middle of pipes
-            if pipe['x_mid'] <= player['x_mid'] < pipe['x_mid'] + 4:
-                track.update({
-                    'score': track['score'] + 1,
-                    'scored': True,
-                })
-
-        '''---Move basex index to the left---'''
-        if (track['loopIter'] + 1) % 3 == 0:
-            player['idx'] = next(player['idx_gen'])
-        track['loopIter'].update((track['loopIter'] + 1) % 30)
-        screen['base_x'].update(
-            -((-screen['base_x'] + 100) % screen['base_sft']))
-
-        '''---Adjust player velocity---
-        * Based on action and current position, and acceleration '''
-        if player['y_vel'] < player['y_vel_max'] and not player['flapped']:
-            player['y_vel'].update(player['y_vel'] + player['y_acc'])
-        if player['flapped']:
-            player['flapped'] = False
-            # rotate to cover threshold (calculated in visible rotation)
-            self.playerRot = 45
-        #print('velY: {} | alt: {}'.format(self.playerVelY, BASE_Y - self.playery - PLAYER_H))
-        player['y'].update(player['y'] + min(player['y_vel'],
-                            screen['base_y'] - player['y'] - player['h']))
-        if player['y'] <= 0: player['y'].update(0)
-
-        '''---Shift pipes to the left---'''
-        for u, l in zip(pipe['upper'], pipe['lower']):
-            u['x'] += pipe['x_vel']
-            l['x'] += pipe['x_vel']
-
-        '''---Add set of pipes as first approaches left of screen---'''
-        if 0 < pipe['upper'][0]['x'] < 5:
-            pipe_n, gapY = self.get_random_pipe(pipe, screen)
-            pipe['upper'].append(pipe_n[0])
-            pipe['lower'].append(pipe_n[1])
-            gap['loc'].append(gapY)
-
-        '''---Delete pipes when they move off screen---'''
-        if pipe['upper'][0]['x'] < -pipe['w']:
-            pipe['upper'].pop(0)
-            pipe['lower'].pop(0)
-            gap['loc'].pop(0)
-
-        # Player rotation has a limit
-        player['vis_rot'].update(player['rot_thr'])
-        if player['rot'] <= player['rot_thr']:
-            player['vis_rot'].update(player['rot'])
-
-        '''---Check if bird has collided with a pipe or the ground---'''
-        crash = self.is_crash(player, pipe, screen, env)  # set as last frame
-        if crash: track['crash'].update(True)    
-
-        '''---Update screen to reflect state changes---'''
-        for u, l in zip(pipe['upper'], pipe['lower']):
-            screen['display'].blit(env['images']['pipe'][0],
-                        (u['x'], l['y']))
-            screen['display'].blit(env['images']['pipe'][1],
-                        (u['x'], l['y']))
-
-        screen['display'].blit(env['images']['base'],
-                    (screen['base_x'], screen['base_y']))
-
-        screen['display'].blit(env['images'][player['idx']],
-                    (player['x'], player['y']))
-
-        '''---Preserve frame image data to pass into neural network---'''
-        scn_cap = pygame.surfarray.array3d(pygame.display.get_surface())
-
-        '''---Progress to the next step---'''
-        pygame.display.update()
-        env['clock'].tick(env['fps'] * env['tick'])  # speed up play
-        params['game'].update({
-            'screen': {screen},
-            'pygame': {env},
-            'player': {player},
-            'pipe': {pipe},
-            'track': {track},
-        })
-        return scn_cap, track['crash'], track['status']
-
-    def set_mode(self, difficulty):
-        '''Sets size of the gap between the upper and lower pipes'''
-        mode = {'easy': 200,          # large pipe gap
-                'intermediate': 150,  # medium pipe gap
-                'hard': 100}          # small pipe gap
-        return mode.get(difficulty)
-
-    def get_random_pipe(self, pipe, screen):
+    def get_random_pipe(self, pipe):
         '''returns a randomly generated pipe'''
         # y of gap between upper and lower pipe
         gapY = rand.randrange(0, 
-            int(screen['base_y'] * 0.6 - pipe['gap']['size']))
-        gapY += int(screen['base_y'] * 0.2)
-        pipeX = screen['w'] + 10
+            int(self.screen['base_y'] * 0.6 - pipe['gap']['size']))
+        gapY += int(self.screen['base_y'] * 0.2)
+        pipeX = self.screen['w'] + 10
 
         pipe_n = [{   # upper pipe
             'x': pipeX, 'x_mid': pipeX + (pipe['w'] // 2),
@@ -267,23 +160,145 @@ class Environment:
 
         return pipe_n, gap
 
-    def is_crash(self, player, pipe, screen, env):
+    def quit_game(self):
+        pygame.quit()
+
+    def step(self, action):
+        if self.track['crash']:    # bird crashed!
+            self.__init__(user_setting=self.u_s,
+                          util=self.util)
+
+        pygame.event.pump()
+        mod = pygame.key.get_mods()
+        self.track['status'] = 'play'
+        self.track['scored'] = False
+
+        '''---Check for Human Input---'''
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self.track['status'] = 'exit'
+                if event.key == pygame.K_s and mod & pygame.KMOD_CTRL:
+                    self.track['status'] = 'save'
+
+        ' Rotate the player'
+        if self.player['rot'] > -90:
+            self.player['rot'] -= self.player['rot_vel']
+
+        ''' Player Movement:
+             action[0] == 1:  Don't Flap
+             action[1] == 1:  Flap '''
+        if sum(action) != 1:          # validate action
+            raise ValueError('Invalid action state!')
+
+        if action[1] == 1:
+            if self.player['y']> -2 * self.player['h']:
+                self.player['y_vel'] = self.player['flap_acc']
+                self.player['flapped'] = True
+
+        '''---Check if player is passing through pipes--'''
+        self.player['x_mid'] = self.player['x'] + self.player['w'] // 2
+        for p in self.pipe['upper']:
+            p['x_mid'] = p['x'] + self.pipe['w'] // 2
+            # Player is between the middle of pipes
+            if p['x_mid'] <= self.player['x_mid'] < p['x_mid'] + 4:
+                self.track['score'] += 1
+                self.track['scored'] = True
+
+        '''---Move basex index to the left---'''
+        if (self.track['loopIter'] + 1) % 3 == 0:
+            self.player['idx'] = next(self.player['idx_gen'])
+        self.track['loopIter'] = (self.track['loopIter'] + 1) % 30
+        self.screen['base_x']= -((-self.screen['base_x'] + 100) % self.screen['base_sft'])
+
+        '''---Adjust player velocity---
+        * Based on action and current position, and acceleration '''
+        if self.player['y_vel'] < self.player['y_vel_max'] and not self.player['flapped']:
+            self.player['y_vel'] = self.player['y_vel'] + self.player['y_acc']
+        if self.player['flapped']: 
+            self.player['flapped'] = False
+            self.playerRot = 45
+        #print('velY: {} | alt: {}'.format(self.playerVelY, BASE_Y - self.playery - PLAYER_H))
+        self.player['y'] = self.player['y'] + min(self.player['y_vel'],
+                      self.screen['base_y'] - self.player['y'] - self.player['h'])
+        if self.player['y'] <= 0: self.player['y'] = 0
+
+        '''---Shift pipes to the left---'''
+        for u, l in zip(self.pipe['upper'], self.pipe['lower']):
+            u['x'] += self.pipe['x_vel']
+            l['x'] += self.pipe['x_vel']
+
+        '''---Add set of pipes as first approaches left of screen---'''
+        if 0 < self.pipe['upper'][0]['x'] < 5:
+            pipe_n, gapY = self.get_random_pipe(self.pipe)
+            self.pipe['upper'].append(pipe_n[0])
+            self.pipe['lower'].append(pipe_n[1])
+            self.gap['loc'].append(gapY)
+
+        '''---Delete pipes when they move off screen---'''
+        if self.pipe['upper'][0]['x'] < -self.pipe['w']:
+            self.pipe['upper'].pop(0)
+            self.pipe['lower'].pop(0)
+            self.gap['loc'].pop(0)
+
+        # Player rotation has a limit
+        self.player['vis_rot'] = self.player['rot_thr']
+        if self.player['rot'] <= self.player['rot_thr']:
+            self.player['vis_rot'] = self.player['rot']
+
+        '''---Check if bird has collided with a pipe or the ground---'''
+        crash = self.is_crash()  # set as last frame
+        if crash: self.track['crash'] = True
+
+        '''---Update screen to reflect state changes---'''
+        for u, l in zip(self.pipe['upper'], self.pipe['lower']):
+            SCREEN.blit(IMAGES['pipe'][0], (u['x'], l['y']))
+            SCREEN.blit(IMAGES['pipe'][1], (u['x'], l['y']))
+
+        SCREEN.blit(IMAGES['base'], (self.screen['base_x'], 
+                                     self.screen['base_y']))
+
+        SCREEN.blit(IMAGES['player'][self.player['idx']], 
+                    (self.player['x'], self.player['y']))
+
+        '''---Preserve frame image data to pass into neural network---'''
+        scn_cap = pygame.surfarray.array3d(pygame.display.get_surface())
+
+        '''---Progress to the next step---'''
+        pygame.display.update()
+        CLOCK.tick(self.u_s['fps'] * self.u_s['tick'])  # speed up play
+        update = {
+            'player': self.player,
+            'pipe': self.pipe,
+            'track': self.track,
+        }
+
+        return scn_cap, update
+
+    def set_mode(self, difficulty):
+        '''Sets size of the gap between the upper and lower pipes'''
+        mode = {'easy': 200,          # large pipe gap
+                'intermediate': 150,  # medium pipe gap
+                'hard': 100}          # small pipe gap
+        return mode.get(difficulty)
+
+    def is_crash(self):
         '''returns True if player collides with base or pipes'''
-        if player['y'] + pipe['h'] >= screen['base_y'] - 1:
+        if self.player['y'] + self.pipe['h'] >= self.screen['base_y'] - 1:
             return True           # Player Crashed into ground
         else:
-            playerRect = pygame.Rect(player['x'], player['y'],
-                                     pipe['w'], pipe['h'])
-            for u, l in zip(pipe['upper'], pipe['lower']):
+            playerRect = pygame.Rect(self.player['x'], self.player['y'],
+                                     self.pipe['w'], self.pipe['h'])
+            for u, l in zip(self.pipe['upper'], self.pipe['lower']):
                 # upper and lower pipe boundary
                 uRect = pygame.Rect(u['x'], u['y'],
-                                        pipe['w'], pipe['h'])
+                                    self.pipe['w'], self.pipe['h'])
                 lRect = pygame.Rect(l['x'], l['y'],
-                                        pipe['w'], pipe['h'])
+                                    self.pipe['w'], self.pipe['h'])
                 # Masks for collision bounding boxes
-                pHitMask = env['hitmasks']['player'][player['idx']]
-                uHitmask = env['hitmasks']['pipe'][0]
-                lHitmask = env['hitmasks']['pipe'][1]
+                pHitMask = HITMASKS['player'][self.player['idx']]
+                uHitmask = HITMASKS['pipe'][0]
+                lHitmask = HITMASKS['pipe'][1]
 
                 # if bird collided with upipe or lpipe
                 uCol = self.pixel_collision(
@@ -292,7 +307,7 @@ class Environment:
                     playerRect, lRect, pHitMask, lHitmask)
                 # rotate player on pipe crash
                 if uCol or lCol: 
-                    player['rot'].update(-player['rot_vel'])
+                    self.player['rot'] = -self.player['rot_vel']
                     return True
         # No Crash
         return False

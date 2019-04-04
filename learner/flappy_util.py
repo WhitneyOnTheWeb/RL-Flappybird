@@ -10,6 +10,7 @@ import time
 import json
 import uuid
 import imageio
+import collections
 import numpy as np
 import pprint as pp
 import random as rand
@@ -19,6 +20,7 @@ import game.flappy_load as fl
 from keras import backend as K
 from keras.utils import plot_model, Sequence
 from tensorflow import ConfigProto, Session, Graph
+from collections import Mapping, OrderedDict, defaultdict
 from learner.flappy_deep_rl import RLAgent, RLModel, Buffer
 
 '''
@@ -28,97 +30,34 @@ Author:  Whitney King
 Date:    April 2, 2019
 '''
 
-class Parameter(dict):
-    def __init__(self, params, **kwargs):
-        dict.__init__(params, **kwargs)
+class Parameter(defaultdict):
+    def __init__(self, params):
+        super(Parameter, self).__init__()
         util = Utility()
         util.display_status('Beginning RL Parameter Initialization')
-        IMAGES, HITMASKS = fl.load()
-        SCREEN_W = 288
-        SCREEN_H = 512
 
-        '--- Populate SubDictionaries from Inputs ----------------------------'
-        self.update({
-            'session': {'id': util._get_id(),
-                        'log': {}},      # unique identifier
-            'agent': params['agent'],
-        })
-        self['agent']['model']['train']['epsilon'] = \
-            self['agent']['model']['train']['initial_epsilon']
-        '--- Populate Parameter Dictionary for Backend -----------------------'
-        self['game'].update({
-            'name': params['game']['name'],
-            'settings': {
-                'pygame': {
-                    'fps': params['game']['fps'],
-                    'clock': None,
-                    'tick': params['game']['fps_tick'],
-                    'difficulty': params['game']['difficulty'],
-                    'target': params['game']['target'],
-                    'images': IMAGES,
-                    'hitmasks': HITMASKS,
-                },
-                'screen': {
-                    'icon': None,
-                    'background_w': IMAGES['background'].get_width(),
-                    'display': None,
-                    'h': SCREEN_H,
-                    'w': SCREEN_W,
-                    'base_x': 0,
-                    'base_y': SCREEN_H * 0.79,
-                    'base_w': IMAGES['base'].get_width(),
-                    'base_sft': IMAGES['base'].get_width() - \
-                        IMAGES['background'].get_width(),
-                },
-                'player': {
-                    'h': IMAGES['player'][0].get_height(),
-                    'w': IMAGES['player'][0].get_width(),
-                    'x': int(SCREEN_W * 0.2),
-                    'y': int((SCREEN_H - \
-                        IMAGES['player'][0].get_height(),) / 2),
-                    'idx_gen': None,
-                    'idx': 0,
-                    'y_vel':-9,        # player's velocity along Y
-                    'y_vel_max': 10,   # max vel along Y, max descend speed
-                    'y_vel_min': -8,   # min vel along Y, max ascend speed
-                    'y_acc': 1,        # players downward acceleration
-                    'rot': 45,         # player's rotation
-                    'rot_vel': 3,      # angular speed
-                    'rot_thr': 20,     # rotation threshold
-                    'flap_acc': -9,    # players speed on flapping
-                    'flapped': False,  # True when player flaps
-                },
-                'pipe': {
-                    'h': IMAGES['pipe'][0].get_height(),
-                    'w': IMAGES['pipe'][0].get_width(),
-                    'x_vel': -4,
-                    'gap': {
-                        'size': None,
-                        'loc': [],
-                    },
-                    'upper': [],
-                    'lower': [],
-                },
-                'track': {
-                    'scored': False,
-                    'score': 0,
-                    'status': 'play',
-                    'crash': False,
-                    'loopIter': 0,
-        }}})
+        '--- Populate Parameter Dictionary ----------------------------'
+        self['agent'] = params['agent']
+        self['model'] = self['agent']['model']
+        self['train'] = self['model']['train']
+        self['train']['epsilon'] = self['train']['initial_epsilon']
+        self['save'] = self['model']['save']
 
-        settings = self['game']['settings']
-        player = settings['player']
+        self['game'] = {
+                'settings': { 
+                    'pygame': params['game'],
+                    'player': {},
+                    'pipe': {},
+                    'track': {},
+        }}
+        self['settings'] = self['game']['settings']
+        self['screen'] = self['settings']['screen']
+        self['pygame'] = self['settings']['pygame']
+        self['player'] = self['settings']['player']
+        self['pipe'] = self['settings']['pipe']
 
-        player.update({
-            'x_mid': player['x'] + (player['w'] // 2),
-            'x_right': player['x'] + player['w'],
-            'y_mid': player['y'] + (player['h'] // 2),
-            'y_btm': player['y'] + player['h'], 
-            'vis_rot': player['rot_thr']
-        })
-
-        self['session'].update({
+        self['session'] = {
+            'id': util._get_id(),
             'graph': tf.get_default_graph(),
             'reward': [],               # rewards by episode
             'score': [],                # score by episode
@@ -128,9 +67,11 @@ class Parameter(dict):
             'end': None,                # session end time
             'elapsed': None,
             'status': 'play',
+            'log': params['log'],
             'episode': {
                 'nb': 1,                # episode counter
-                'max_steps': self['game']['fps'] * self['agent']['max_time'] * 60,
+                'max_steps': self['pygame']['fps'] * \
+                    self['agent']['max_time'] * 60,
                 'reward': 0,            # reward for all steps in episode
                 'score': 0,             # episode score
                 'steps': 0,             # track number of steps in episode
@@ -157,10 +98,12 @@ class Parameter(dict):
                 'gif': {
                         'x': [],
                         'xfm': [],
-                },
-            }})
+        }}}
 
-        self['session']['log'].update({
+        self['episode'] = self['session']['episode']
+        self['step'] = self['episode']['step']
+
+        log_paths = {
             'session_log': '/sess_{}'.\
                 format(self['session']['id']),
             'episode_log': '/ep{}_{}'.\
@@ -170,8 +113,8 @@ class Parameter(dict):
                 format(self['session']['id']),
             'model_log': '/modelhist_{}'.\
                 format(self['session']['id']),
-        })
-        self['session']['log'].update(params['log'])
+        }
+        util.update_nested_dict(self['session']['log'], log_paths)
 
         config = ConfigProto()
         config.gpu_options.allow_growth = True
@@ -182,62 +125,8 @@ class Parameter(dict):
                     graph=self['session']['graph'])
 
         util.display_status('Hyperparameters Successfully Loaded')
-        
-    def __setitem__(self, key, item):
-        self.__dict__[key] = item
-
-    def __getitem__(self, key):
-        return self.__dict__[key]
-
-    def __repr__(self):
-        return repr(self.__dict__)
-
-    def __len__(self):
-        return len(self.__dict__)
-
-    def __delitem__(self, key):
-        del self.__dict__[key]
-
-    def __cmp__(self, dict_):
-        return self.__cmp__(self.__dict__, dict_)
-
-    def __contains__(self, item):
-        return item in self.__dict__
-
-    def __iter__(self):
-        return iter(self.__dict__)
-
-    def __unicode__(self):
-        return unicode(repr(self.__dict__))
-
-    def clear(self):
-        return self.__dict__.clear()
-
-    def copy(self):
-        return self.__dict__.copy()
-
-    def has_key(self, k):
-        return k in self.__dict__
-
-    def update(self, *args, **kwargs):
-        return self.__dict__.update(*args, **kwargs)
-
-    def keys(self):
-        return self.__dict__.keys()
-
-    def values(self):
-        return self.__dict__.values()
-
-    def items(self):
-        return self.__dict__.items()
-
-    def pop(self, *args):
-        return self.__dict__.pop(*args)
-
 
 class Utility:
-    def __init__(self):
-        super(Utility, self).__init__()
 
     def _get_timestamp(self):
         return time.strftime('%Y-%m-%d@%H:%M:%S')
@@ -248,19 +137,22 @@ class Utility:
     def display_status(self, status):
         print('{} | {}...'.format(self._get_timestamp(), status))
 
+    def update_nested_dict(self, _dict, inputs):
+        for k, v in inputs.items():
+            d_v = _dict.get(k)
+            if isinstance(v, collections.Mapping) \
+            and isinstance(d_v, collections.Mapping):
+                self.update_nested_dict(d_v, v)
+            else: _dict[k] = v
+
     def initialize_rl_session(self, params):
         '--- Game Environment and Parameters' 
         game = params['game']
-        game['env'] = flappy.Environment(
-            target_score=game['target'],
-            difficulty=game['difficulty'],
-            fps=game['fps']
-        )
+        self.env = flappy.Environment(user_setting=params['pygame'], 
+                                      util=self)
         
-        # GAME SETTINGS
-
         self.display_status('{} Environment Initialized'.\
-            format(game['name']))
+            format(game['settings']['pygame']['name']))
 
         '--- Allocate Experience Replay Memory'
         agent = params['agent']
@@ -286,17 +178,17 @@ class Utility:
         model = agent['model']
         model.update({
             'worker': RLModel(
-                        model=model['name'],
-                        A=agent['action_size'],
-                        S=model['state_size'],
-                        H=model['filter_size'],
-                        lr=model['learning_rate'],
-                        alpha=model['alpha'],
-                        reg=model['regulizer'],
-                        momentum=model['momentum'],
-                        decay=model['decay'],
-                        loss=model['loss_function'],
-                        opt=model['optimizer']
+                model=model['name'],
+                A=agent['action_size'],
+                S=model['state_size'],
+                H=model['filter_size'],
+                lr=model['learning_rate'],
+                alpha=model['alpha'],
+                reg=model['regulizer'],
+                momentum=model['momentum'],
+                decay=model['decay'],
+                loss=model['loss_function'],
+                opt=model['optimizer']
         )})
         self.display_status('{} Keras Model Compiled'.\
             format(model['name']))
@@ -311,6 +203,7 @@ class Utility:
             self.display_status('Saved Keras Model Weights Loaded')
         except:
             self.display_status('No Saved Keras Model Weights Found')
+        return self.env
 
     def log_session(self, params):
         '''---Log session information---'''
@@ -333,9 +226,7 @@ class Utility:
     
     def log_step(self, params):
         '''---Log agent step information---'''
-        agent = params['agent']
         session = params['session']
-        log = params['session']['log']
         episode = session['episode']
         step = episode['step']
         image = step['image']
@@ -349,7 +240,6 @@ class Utility:
     def log_game(self, params):
         '''---Log game step information---'''
         game = params['game']
-        log = params['session']['log']
         keys = ['player', 'pipes', 'terminal', 'scored', 'score']
         data = { x : game[x] for x in keys }
         return data
@@ -730,11 +620,10 @@ class Utility:
 
     def end_session(self, params):
         session = params['session']
-        game = params['game']
 
         '''---Exit PyGame and Close Session After Last Episode---'''
         self.display_status('Training Session Complete!')
-        game.quit_game()                    # quit pygame
+        params.env.quit_game()                    # quit pygame
         session['end'] = time.time()
         session['elapsed'] = time.gmtime(session['end'] - session['start'])
         session['elapsed'] = time.strftime('%H Hours %M Minutes %S Seconds',
@@ -742,6 +631,6 @@ class Utility:
         self.log_session(params)               # track session information
         self.display_status('Elapsed Time: {}'.format(session['elapsed']))
         print('  ___                   ___')
-        print(' / __|__ _ _ __  ___   / _ \__ ______ _')
-        print('| (_ / _` | ''   \/ -_) | (_) \ V / -_) ''_|')
-        print(' \___\__,_|_|_|_\___|  \___/ \_/\___|_|')
+        print(' / __|__ _ _ __  ___   / _ \\__ ______ _')
+        print('| (_ / _` | ''   \\/ -_) | (_) \\ V / -_) ''_|')
+        print(' \\___\\__,_|_|_|_\\___|  \\___/ \\_/\\___|_|')
