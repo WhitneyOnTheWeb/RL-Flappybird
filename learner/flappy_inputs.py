@@ -43,7 +43,7 @@ class Inputs:
                 'initial_epsilon': .15,
                 'terminal_epsilon': 0.01,
                 'anneal': 20000,           # steps to cool down epsilon
-                'epochs': 1,
+                'epochs': 4,
                 'split': .1,
                 'validate': False,
                 'shuffle': False,
@@ -66,7 +66,7 @@ class Inputs:
         }},
         'memory': {
             'state_size': 8,
-            'batch_size': 20,
+            'batch_size': 16,
             'batch_idx': None,
             'limit': 10000,   
             'interval': 1,
