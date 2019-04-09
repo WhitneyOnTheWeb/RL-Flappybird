@@ -23,6 +23,7 @@ import os
 import sys
 import cv2
 import pygame
+import random
 from skimage import io
 from PIL import Image
 
@@ -40,30 +41,51 @@ def load():
 
     # obstacle sprites
     BACKGROUND = PATH + 'background-black' + ftype
-    PIPE = PATH + 'pipe-green' + ftype
-
+    PIPE = (
+            PATH + 'pipe-green' + ftype,
+            PATH + 'pipe-blue' + ftype,
+            PATH + 'pipe-red' + ftype,
+    )
     # player sprites (3 positions of flap)
-    PLAYER = (  # yellow bird
-        PATH + 'bluebird-upflap' + ftype,
-        PATH + 'bluebird-midflap' + ftype,
-        PATH + 'bluebird-downflap' + ftype)
+    PLAYER = ((
+            PATH + 'redbird-upflap' + ftype,
+            PATH + 'redbird-midflap' + ftype,
+            PATH + 'redbird-downflap' + ftype
+        ),
+        (
+            PATH + 'yellowbird-upflap' + ftype,
+            PATH + 'yellowbird-midflap' + ftype,
+            PATH + 'yellowbird-downflap' + ftype
+        ),# yellow bird
+        (
+            PATH + 'purplebird-upflap' + ftype,
+            PATH + 'purplebird-midflap' + ftype,
+            PATH + 'purplebird-downflap' + ftype
+        ),# purple bird
+        (
+            PATH + 'bluebird-upflap' + ftype,
+            PATH + 'bluebird-midflap' + ftype,
+            PATH + 'bluebird-downflap' + ftype
+    ))
 
-    # base (ground) sprite
+# base (ground) sprite
     IMAGES['base'] = pygame.image.load(PATH + 'base' + ftype)
     IMAGES['base'].convert_alpha()
 
+    i = random.randint(0, len(PLAYER) - 1)
     IMAGES['player'] = (
-        pygame.image.load(PLAYER[0]).convert_alpha(),
-        pygame.image.load(PLAYER[1]).convert_alpha(),
-        pygame.image.load(PLAYER[2]).convert_alpha())
+        pygame.image.load(PLAYER[i][0]).convert_alpha(),
+        pygame.image.load(PLAYER[i][1]).convert_alpha(),
+        pygame.image.load(PLAYER[i][2]).convert_alpha())
 
     IMAGES['background'] = pygame.image.load(BACKGROUND).convert()
 
+    i = random.randint(0, len(PIPE) - 1)
     # pipe sprites
     IMAGES['pipe'] = (
         pygame.transform.rotate(
-            pygame.image.load(PIPE).convert_alpha(), 180),
-        pygame.image.load(PIPE).convert_alpha()
+            pygame.image.load(PIPE[i]).convert_alpha(), 180),
+        pygame.image.load(PIPE[i]).convert_alpha()
     )
 
     # pipe hitmask
