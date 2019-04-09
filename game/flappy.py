@@ -52,9 +52,16 @@ BASE_W       = IMAGES['base'].get_width()
 # change player respawn x every 5th iteration
 PLAYER_INDEX_GEN = cycle([0, 1, 2, 1])
 
+def render(mode='human'):
+    pygame.init()
+    FPSCLOCK  = pygame.time.Clock()
+    SCREEN    = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+
 class Environment:
     def __init__(self, target_score = 40, difficulty = 'hard', fps = 30, tick =  2):
         '''---Initialize New Game---'''        
+        render()
+        
         self.name = 'FlappyBird'
         self.icon = pygame.image.load('game/flappy.ico')
         self.width = SCREEN_W
@@ -124,9 +131,6 @@ class Environment:
         self.playerFlapAcc = -9      # players speed on flapping
         self.playerFlapped =  False  # True when player flaps
         self.msg = 'Fly, little birdie!!'
-
-    def render(self, mode='human'):
-        pygame.init()
 
     def reset(self):
         self.__init__()

@@ -385,7 +385,7 @@ class BetaFlapDQN(DQNAgent):
             dueling_type=self.dueling_type,
             **kwargs)
 
-    def fit(self, iteration):
+    def fit(self, iteration=1, max_iteration=1):
 
         if self.action_repetition < 1:
             raise ValueError(
@@ -403,6 +403,7 @@ class BetaFlapDQN(DQNAgent):
         '''---Flag Agent with as Training with on_train_begin()'''
         self._on_train_begin()
         FlappyCall.on_train_begin()
+        self.env.render()
         
         self.training = True
         observation = None
@@ -566,7 +567,8 @@ class BetaFlapDQN(DQNAgent):
                 episode_reward = None
                 episode_score = None
                 gc.collect()
-                if did_abort: break   # save and exit with ESC key
+                if did_abort: 
+                    break
 
                 if episode > self.nb_episodes:
                     done = True       # max episode hit
@@ -585,7 +587,9 @@ class BetaFlapDQN(DQNAgent):
             self.log_path
         )
         self._on_train_end()  # end training session 
-        self.env.close() 
+        if iteration >= max_iteration or did_abort: 
+            self.env.close() 
+            return True
 
     def forward(self, observation):
         # Select an action
@@ -607,9 +611,9 @@ class BetaFlapDQN(DQNAgent):
         if self.step % self.memory_interval == 0:
             with self.sess.as_default():
                 self.memory.append(
-                    self.recent_observation, 
-                    self.recent_action, 
-                    reward, 
+                    np.array(self.recent_observation), 
+                    np.int16(self.recent_action), 
+                    np.float32(reward), 
                     terminal,
                     training=self.training
                 )
