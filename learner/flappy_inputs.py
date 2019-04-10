@@ -5,7 +5,7 @@ class Inputs:
         'game': {
             'name': 'FlappyBird',
             'fps': 30,
-            'tick': 1,  
+            'tick': 4,  
             'target': 40,
             'difficulty': 'hard',  
         },
@@ -14,7 +14,7 @@ class Inputs:
             'action_size': 2,
             'delta_clip': np.inf, 
             'session': {
-                'max_ep': 250000,  
+                'max_ep': 1000,  
                 'episode': {
                     'max_time': 5,              # minutes
                     'keep_gif_score': 4,
@@ -29,24 +29,24 @@ class Inputs:
             'momentum': 0.01,
             'decay': 0.001,
             'noise_amp': 0.1, 
-            'target_update': 1,
+            'target_update': 100,
             'dueling_network': False,    # DQN
             'dueling_type': 'max',      # DQN
             'double_dqn': False,        # DQN
             'training': { 
-                'verbose': 2,               # 0, 1, or 2
+                'verbose': 0,               # 0, 1, or 2
                 'interval': 1,
-                'action_repetition': 1,
+                'action_repetition': 4,
                 'warmup': 100,
                 'max_ep_observe': 40,      # ep random start steps
-                'learn_rate': 0.01,
-                'initial_epsilon': .15,
-                'terminal_epsilon': 0.01,
+                'learn_rate': 0.001,
+                'initial_epsilon': 1,
+                'terminal_epsilon': 0.001,
                 'anneal': 20000,           # steps to cool down epsilon
-                'epochs': 4,
+                'epochs': 1,
                 'split': .1,
-                'validate': False,
-                'shuffle': False,
+                'validate': True,
+                'shuffle': True,
                 'training': False,
             },
             'save': {
@@ -65,9 +65,9 @@ class Inputs:
                 'visualize': True,   # Visualizer() Callback
         }},
         'memory': {
-            'state_size': 8,
-            'batch_size': 16,
+            'state_size': 16,
+            'batch_size': 75,
             'batch_idx': None,
-            'limit': 10000,   
+            'limit': 50000,   
             'interval': 1,
 }}

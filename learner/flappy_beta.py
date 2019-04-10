@@ -24,11 +24,11 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 import matplotlib.image as img
 from collections import defaultdict, Mapping
-import game.flappy as flappy
 from flappy_util import Utility
 from flappy_inputs import Inputs
 from flappy_processor import FlappyProcessor
 from flappy_callback import FlappySession
+import game.flappy as flappy
 
 '---Keras / Tensorflow Modules'
 import tensorflow as tf
@@ -310,7 +310,7 @@ class BetaFlapDQN(DQNAgent):
                 eps = self.value_max
             ), 
             attr='eps', 
-            value_max= self.value_max,
+            value_max=self.value_max,
             value_min=self.value_min, 
             value_test=self.alpha,
             nb_steps=self.anneal
@@ -383,7 +383,8 @@ class BetaFlapDQN(DQNAgent):
             enable_double_dqn=self.enable_double_dqn,
             enable_dueling_network=self.enable_dueling_network,
             dueling_type=self.dueling_type,
-            **kwargs)
+            **kwargs
+        )
 
     def fit(self, iteration=1, max_iteration=1):
 
@@ -403,7 +404,6 @@ class BetaFlapDQN(DQNAgent):
         '''---Flag Agent with as Training with on_train_begin()'''
         self._on_train_begin()
         FlappyCall.on_train_begin()
-        self.env.render()
         
         self.training = True
         observation = None
@@ -482,20 +482,22 @@ class BetaFlapDQN(DQNAgent):
 
             '''---Predict Q Values Using Forward Method'''
             idx = self.forward(observation)
-
             action, flap = Flappy.process_action(idx, self.nb_actions)
+            #episode_step += 1
             reward = np.float32(0)
             done = False
-            
             for _ in range(self.action_repetition):
                 o, r, d, i = self.env.step(action)
                 observation = deepcopy(o)
-                
                 observation, r = Flappy.process_step(o, r, d, i)
                 reward += r
                 done = d
                 info = i
                 status = info['status']
+                episode_step += 1
+                if info['status'] =='exit': 
+                    done = True
+                    did_abort = True
                 if done: break    # game over, end episode
 
             '''---Train the Model using Backward Method
@@ -531,7 +533,7 @@ class BetaFlapDQN(DQNAgent):
             FlappyCall.on_step_end(episode_step, step_log)
             gc.collect()
 
-            episode_step += 1
+            #episode_step += 1
             self.step += 1
 
             if (self.step % self.save_interval) == 0 \
@@ -567,10 +569,8 @@ class BetaFlapDQN(DQNAgent):
                 episode_reward = None
                 episode_score = None
                 gc.collect()
-                if did_abort: 
-                    break
-
-                if episode > self.nb_episodes:
+                
+                if episode > self.nb_episodes or did_abort:
                     done = True       # max episode hit
                     break
             
@@ -609,14 +609,13 @@ class BetaFlapDQN(DQNAgent):
     def backward(self, reward, terminal):
         '''Store latest step in experience replay tuple'''
         if self.step % self.memory_interval == 0:
-            with self.sess.as_default():
-                self.memory.append(
-                    np.array(self.recent_observation), 
-                    np.int16(self.recent_action), 
-                    np.float32(reward), 
-                    terminal,
-                    training=self.training
-                )
+            self.memory.append(
+                np.array(self.recent_observation), 
+                np.int16(self.recent_action), 
+                np.float32(reward), 
+                terminal,
+                training=self.training
+            )
         metrics = []
         if not self.training:
             return metrics
@@ -624,9 +623,8 @@ class BetaFlapDQN(DQNAgent):
         '''Begin Training on Batches of Stored Experiences'''
         if self.step > self.nb_steps_warmup \
         and self.step % self.train_interval == 0:
-            with self.sess.as_default():
-                batch = self.memory.sample(self.batch_size)
-                assert len(batch) == self.batch_size
+            batch = self.memory.sample(self.batch_size)
+            assert len(batch) == self.batch_size
             
             state0_batch, reward_batch,action_batch, terminal1_batch, \
             state1_batch = \
@@ -645,31 +643,34 @@ class BetaFlapDQN(DQNAgent):
             '''
             if self.enable_double_dqn:
                 with self.sess.as_default():
-                    self.q_values = self.model.predict_on_batch(state1_batch)
-                assert self.q_values.shape == (self.batch_size, self.nb_actions)
-                actions = np.argmax(self.q_values, axis=1)
+                    with tf.device('/GPU:0'):
+                        q_values = self.model.predict_on_batch(state1_batch)
+                assert q_values.shape == (self.batch_size, self.nb_actions)
+                actions = np.argmax(q_values, axis=1)
                 assert actions.shape == (self.batch_size,)
                 # estimate Q values using the target network 
                 # select maxQ value with the online model (computed above)
                 with self.sess.as_default():
-                    self.target_q_values = \
+                    with tf.device('/GPU:0'):
+                        target_q_values = \
                         self.target_model.predict_on_batch(state1_batch)
 
-                assert self.target_q_values.shape == \
+                assert target_q_values.shape == \
                     (self.batch_size, self.nb_actions)
-                self.q_batch = self.target_q_values[range(self.batch_size), actions]
+                q_batch = target_q_values[range(self.batch_size), actions]
             # Compute the q_values for state1, compute maxQ of each sample
             # prediction done on target_model as outlined in Mnih (2015),
             # it makes the algorithm is significantly more stable
             else:
                 with self.sess.as_default():
-                    self.target_q_values = \
+                    with tf.device('/GPU:0'):
+                        target_q_values = \
                         self.target_model.predict_on_batch(state1_batch)
 
-                assert self.target_q_values.shape == \
+                assert target_q_values.shape == \
                     (self.batch_size, self.nb_actions)
-                self.q_batch = np.max(self.target_q_values, axis=1).flatten()
-            assert self.q_batch.shape == (self.batch_size,)
+                q_batch = np.max(target_q_values, axis=1).flatten()
+            assert q_batch.shape == (self.batch_size,)
 
             targets = np.zeros((self.batch_size, self.nb_actions))
             dummy_targets = np.zeros((self.batch_size,))
@@ -678,7 +679,7 @@ class BetaFlapDQN(DQNAgent):
             # Compute r_t + gamma * max_a Q(s_t+1, a) 
             # update the affected output targets accordingly
             # Set discounted reward to zero for all states that were terminal
-            discounted_reward_batch = self.gamma * self.q_batch
+            discounted_reward_batch = self.gamma * q_batch
             discounted_reward_batch *= terminal1_batch
             assert discounted_reward_batch.shape == reward_batch.shape
     
@@ -699,24 +700,30 @@ class BetaFlapDQN(DQNAgent):
             if type(self.model.input) is not list:
                 ins = [state0_batch] 
             else: state0_batch
-            if self.validate: split = self.split
+            if self.validate: 
+                split = self.split
             else: split = 0
 
-            metrics = self.trainable_model.fit(
-                ins + [targets, masks], 
-                [dummy_targets, targets],
-                batch_size=self.batch_size,
-                epochs=self.epochs,
-                verbose=self.verbose,
-                validation_split=split,
-                shuffle=self.shuffle,
-            )
-            #metrics = self.trainable_model.train_on_batch(
-            #    ins + [targets, masks], [dummy_targets, targets])
+            with self.sess.as_default():
+                with tf.device('/GPU:0'):
+                    # THIS CAUSES A MEMORY LEAK IN CURRENT CONFIGURATION
+                    #metrics = self.trainable_model.fit(
+                    #    ins + [targets, masks], 
+                    #    [dummy_targets, targets],
+                    #    batch_size=self.batch_size,
+                    #    epochs=self.epochs,
+                    #    verbose=self.verbose,
+                    #    validation_split=split,
+                    #shuffle=self.shuffle,
+                    #)
+                    #gc.collect()
+                    metrics = self.trainable_model.train_on_batch(
+                        ins + [targets, masks], [dummy_targets, targets])
             # throw away individual losses
-            #metrics = \
-            #    [m for idx, m in enumerate(metrics) if idx not in (1, 2)]
-            #metrics += self.policy.metrics
+            if type(metrics) is list: 
+                [m for idx, m in enumerate(metrics) if idx not in (1, 2)]
+            else:
+                metrics.history.update({'losses': self.policy.metrics})
 
         if self.target_model_update >= 1 \
         and self.step % self.target_model_update == 0:
@@ -725,14 +732,15 @@ class BetaFlapDQN(DQNAgent):
     
     def config_session(self):
         config = ConfigProto(
-            device_count = {'GPU': 2},
+            #device_count = {'CPU': 1},
             inter_op_parallelism_threads=1,
             intra_op_parallelism_threads=1,
         )
         config.gpu_options.allow_growth = True
-        config.gpu_options.per_process_gpu_memory_fraction = 0.8
-        
-        graph = tf.get_default_graph()
+        #config.gpu_options.per_process_gpu_memory_fraction = 0.9
+
+        with tf.device('/GPU:0'):
+            graph = tf.get_default_graph()
         sess = Session(config=config, graph=graph)
         return sess
     

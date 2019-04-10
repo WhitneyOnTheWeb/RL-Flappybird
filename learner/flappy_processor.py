@@ -23,14 +23,21 @@ class FlappyProcessor(Processor):
         x_t = cv2.threshold(x_t, 1, 255, cv2.THRESH_BINARY)[1]
         return x_t
 
+    def process_step(self, o, r, d, i):
+        observation = self.process_observation(o)
+        reward = self.process_reward(r)
+        return observation, reward
+    
     def process_reward(self, reward):
         gap_x, gap_y = False, False
-        u1, u2, u3, u4 = False, False, False, False
-        l1, l2, l3, l4 = False, False, False, False
+        u1, u2, u3 = False, False, False
+        l1, l2, l3 = False, False, False
+
+        print(reward)
 
         up = reward['pipes']['upper']
         low = reward['pipes']['lower']
-        gaps = reward['pipes']['gaps']
+        gaps = reward['gaps']
         b = reward['player']
 
         '--- Reward player positioning if in gap between pipe corners'
@@ -64,7 +71,9 @@ class FlappyProcessor(Processor):
             gap = gaps[0]
             pipe = up[0]
 
-        if gap['btm'] > b['btm'] > b['y'] > gap['top']:
+        pp.pprint(gap)
+
+        if gap['y_btm'] > b['btm'] > b['y'] > gap['y']:
             gap_y = True                  # level w/ pipe gap
             if pipe['x'] < b['x_mid'] < pipe['x_right']:
                 gap_x = True              # in pipe gap
@@ -78,27 +87,25 @@ class FlappyProcessor(Processor):
             np.sqrt(step_dist * reward['step'])
         )) // (1 + tar_delta)
 
-        gap_dist = np.sqrt(   # scaled reward booster
-            np.abs((gap['mid'] - b['y_mid']) ** 2 - (up[0]['x_mid'] - b['x_mid']) ** 2) //
-            step_dist
-        ) // (tar_delta // 2)
-        #print('tar: {}  st: {}  gap: {}  delta: {}'.\
-        #    format(tar_dist, step_dist, gap_dist, tar_delta))
+        gap_dist = b['mid'] - gap['mid']
+        print('gap: {} | y: {} | x: {}'.\
+            format(gap_dist, b['mid'], gap['mid']))
 
         award = tar_dist * gap_dist # base reward scales w/ dist/score
         if reward['step'] < 50:
-            mul_penalty = (1 + tar_delta) / 5
+            mul_penalty = (1 + tar_delta)
         else: mul_penalty = 1
         self.msg = 'Danger zone!'
-        award = (step_dist * tar_dist) - ((gap_dist + tar_delta) * mul_penalty) 
+        award = (gap_dist ** 4) / mul_penalty
         if reward['step'] > 49:
-            award += tar_dist ** gap_dist **2
+            award += ((1 + tar_dist) ** (1 + gap_dist) ** 2) / (1 + tar_delta)
+        else: award = award / ((1 + tar_delta) * mul_penalty)
         if reward['terminal']:
             award = -100
             self.msg = 'Boom!'
         elif reward['scored']:    # multiplier for scoring
             award += (
-                ((tar_dist ** 2) * (gap_dist ** 2)) // tar_delta)
+                ((1 + tar_dist ** 2) ** (1 + gap_dist ** 2)) * 2 )
             self.msg = 'You scored!'
         elif gap_x and gap_y:  # player within pipe gap
             award += (
@@ -121,10 +128,6 @@ class FlappyProcessor(Processor):
         flap = False if a_t[0] else True
         return a_t, flap          # action index for experience tuple
 
-    def process_step(self, o, r, d, i):
-        observation = self.process_observation(o)
-        reward = self.process_reward(r)
-        return observation, reward
     
     def process_state_batch(self, batch):
         # unpack experiences into individual lists

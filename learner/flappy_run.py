@@ -18,14 +18,13 @@ agent = dqn(inputs)
 '''Fit and Train model with BetaFlap Workflow'''
 # this is a very memory intensive task, so its
 # broken down into smaller increments
-#iters = 250
-#for i in range(iters):
-    
-#    print(
-#        'Training Iterations [{}:{}]--------------------------------------------------'.\
-#            format(i, i + 100)
-#    )
-#done = agent.fit(i, iters)
-done = agent.fit()
-gc.collect()
-#    if done: break
+iters = 20
+for i in range(1, iters):
+    print(        
+       'Training Iterations [{}:{}]--------------------------------------------------'.\
+            format(i, i + iters-1)
+    )
+    done = agent.fit(i, i + iters - 1)
+    gc.collect()
+    if done:
+        break

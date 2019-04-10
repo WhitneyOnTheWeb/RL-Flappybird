@@ -159,6 +159,8 @@ class Environment:
         if sum(action) != 1:          # validate action
             raise ValueError('Invalid action state!')
 
+        print('Working!')
+
         if action[1] == 1:
             if self.playery > -2 * PLAYER_H:
                 self.playerVelY = self.playerFlapAcc
@@ -227,15 +229,33 @@ class Environment:
 
         for uPipe, lPipe in zip(self.upperPipes, self.lowerPipes):
             SCREEN.blit(IMAGES['pipe'][0], 
-                       (uPipe['x'], uPipe['y']))
+                       (uPipe['x'], 
+                        uPipe['y'],
+                        uPipe['x_mid'],
+                        uPipe['y_mid'],
+                        uPipe['corners']))
             SCREEN.blit(IMAGES['pipe'][1], 
-                       (lPipe['x'], lPipe['y']))
+                       (lPipe['x'], 
+                        lPipe['y'],
+                        lPipe['x_mid'],
+                        lPipe['y_mid'],
+                        lPipe['corners']))
+
+        #SCREEN.blit(self.gap_loc,
+        #            self.gap_loc['gapY1'],
+        #            self.gap_loc['gapY2'])
 
         SCREEN.blit(IMAGES['base'], 
                     (self.basex, BASE_Y))
 
         SCREEN.blit(IMAGES['player'][self.playerIndex], 
-                    (self.playerx, self.playery))
+                    (self.playerx, 
+                    self.playerx_mid, 
+                    self.playery,
+                    self.playery_mid,
+                    self.player_right,
+                    self.player_btm
+                    ))
 
         '''---Preserve frame image data to pass into neural network---'''
         observation = pygame.surfarray.array3d(pygame.display.get_surface())
@@ -243,6 +263,9 @@ class Environment:
         '''---Progress to the next step---'''
         pygame.display.update()
         FPSCLOCK.tick(self.fps * self.tick)  # speed up play
+
+        for gap in self.gap_loc:
+            gap['mid'] = (self.upperPipes[0]['x_mid'], gap['y_mid'])
 
         out = {
             'status': status,
@@ -254,18 +277,19 @@ class Environment:
             'player': {
                 'x': self.playerx,
                 'y': self.playery,
+                'mid': (self.playerx_mid, self.playery_mid),
                 'x_mid': self.playerx_mid,
                 'y_mid': self.playery_mid,
                 'right': self.player_right,
-                'btm': self.player_btm,
+                'y_btm': self.player_btm,
                 'y_vel': self.playerVelY,
                 'flapped': self.playerFlapped,
             },
             'pipes': {
                 'upper': self.upperPipes,
                 'lower': self.lowerPipes,
-                'gaps': self.gap_loc,
             },
+            'gaps': self.gap_loc,
         }
 
         reward = out
@@ -301,11 +325,14 @@ class Environment:
             'x_right': pipeX + PIPE_W, 'y': gapY + self.pipe_gap}]
 
         gap_n = { 
-            'top': gapY,   # gap pos for pipe set 1
-            'mid': gapY + self.pipe_gap // 2,
-            'btm': gapY + self.pipe_gap }
+            'y': gapY,   # gap pos for pipe set 1
+            'y_mid': gapY + self.pipe_gap // 2,
+            'y_btm': gapY + self.pipe_gap }
 
         return pipe_n, gap_n
+
+    def draw_polygon(self):
+
     
     
     def is_crash(self):
