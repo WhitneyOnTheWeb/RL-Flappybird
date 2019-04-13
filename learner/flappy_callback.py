@@ -10,7 +10,7 @@ import jsonpickle
 import numpy as np
 import pprint as pp
 import random as rand
-from learner.flappy_util import Utility
+from flappy_util import Utility
 
 '---Keras / Tensorflow Modules'
 import tensorflow as tf

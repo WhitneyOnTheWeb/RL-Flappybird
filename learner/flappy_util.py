@@ -6,6 +6,7 @@ import time
 import json
 import pickle
 import imageio
+import nbformat
 import jsonpickle
 import numpy as np
 import pprint as pp
@@ -13,6 +14,17 @@ import random as rand
 import matplotlib.image as img
 import matplotlib.pyplot as plt
 import keras.backend as K
+import tensorflow as tf
+from IPython import get_ipython
+from tensorflow import ConfigProto, Session, Graph
+from IPython.core.interactiveshell import InteractiveShell
+from pygments import highlight
+from pygments.lexers import PythonLexer
+from pygments.formatters import HtmlFormatter
+from IPython.display import Image, HTML, SVG, Math
+from IPython.display import (
+    display, display_html, display_png, display_svg
+)
 
 class Utility:
     def get_timestamp(self):
@@ -93,8 +105,41 @@ class Utility:
         j.close()
 
 
+    def config_session(self):
+        config = ConfigProto(
+            #device_count = {'CPU': 1},
+            inter_op_parallelism_threads=6,
+            intra_op_parallelism_threads=6,
+            allow_soft_placement=True,
+        )
+        config.gpu_options.allow_growth = True
+        config.gpu_options.per_process_gpu_memory_fraction = 0.9
+
+        with tf.device('/job:localhost/replica:0/task:0/device:GPU:0'):
+            #graph = tf.get_default_graph()
+            sess = Session(config=config)
+        return sess
 
 
-        
+    def show_notebook(self, fname):
+        """display a short summary of the cells of a notebook"""
+        formatter = HtmlFormatter()
+        lexer = PythonLexer()
 
+        # publish the CSS for pygments highlighting
+        display(HTML("""
+        <style type='text/css'>
+        %s
+        </style>
+        """ % formatter.get_style_defs()
+        ))
 
+        nb = nbformat.read(fname, as_version=4)
+        html = []
+        for cell in nb.cells:
+            html.append("<h4>%s cell</h4>" % cell.cell_type)
+            if cell.cell_type == 'code':
+                html.append(highlight(cell.source, lexer, formatter))
+            else:
+                html.append("<pre>%s</pre>" % cell.source)
+        display(HTML('\n'.join(html)))

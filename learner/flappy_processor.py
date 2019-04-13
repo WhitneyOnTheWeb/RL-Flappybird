@@ -12,6 +12,7 @@ import matplotlib.image as img
 import matplotlib.pyplot as plt
 from rl.core import Processor
 
+
 class FlappyProcessor(Processor):
     def process_observation(self, observation):
         '''---Preprocess frames for neural network---
@@ -29,96 +30,36 @@ class FlappyProcessor(Processor):
         return observation, reward
     
     def process_reward(self, reward):
-        gap_x, gap_y = False, False
-        u1, u2, u3 = False, False, False
-        l1, l2, l3 = False, False, False
-
-        print(reward)
-
-        up = reward['pipes']['upper']
-        low = reward['pipes']['lower']
-        gaps = reward['gaps']
-        b = reward['player']
-
-        '--- Reward player positioning if in gap between pipe corners'
-        '--- Check player position against corners of pipes[0]'
-        if b['right'] < up[0]['corners']['left'][0] \
-                and b['y'] > up[0]['corners']['left'][1]:
-            u1 = True  # player Sw of upper pipe[0] left corner
-        if b['right'] < low[0]['corners']['left'][0] \
-                and b['btm'] < low[0]['corners']['left'][1]:
-            l1 = True  # player Nw of lower pipe[0] left corner
-        '--- Check if player in right safe zone'
-        if b['x'] > up[0]['corners']['right'][0] \
-                and b['y'] > up[0]['corners']['right'][1]:
-            u2 = True  # player SE of upper pipe[0] right corner
-        if b['x'] > low[0]['corners']['right'][0] \
-                and b['btm'] < low[0]['corners']['right'][1]:
-            l2 = True
-        '--- Check player position against corners of pipes[1]'
-        '--- Check if player in left safe zone'
-        if b['right'] < up[1]['corners']['left'][0] \
-                and b['y'] > up[1]['corners']['left'][1]:
-            u3 = True  # player Sw of upper pipe[1] left corner
-        if b['right'] < low[1]['corners']['left'][0] \
-                and b['btm'] < low[1]['corners']['left'][1]:
-            l3 = True  # player Nw of lower pipe[1] left corner
-
-        if up[0]['x_right'] < b['x_mid']:
-            gap = gaps[1]     # past first pipes
-            pipe = up[1]
-        else:                 # first pipes
-            gap = gaps[0]
-            pipe = up[0]
-
-        pp.pprint(gap)
-
-        if gap['y_btm'] > b['btm'] > b['y'] > gap['y']:
-            gap_y = True                  # level w/ pipe gap
-            if pipe['x'] < b['x_mid'] < pipe['x_right']:
-                gap_x = True              # in pipe gap
-
         '--- Reward scales up with steps/score/gap distance'
         step_dist = (1 + reward['step']) * (1 + reward['score'])
         tar_delta = reward['target'] - reward['score']
 
         tar_dist = np.sqrt(   # scaled reward booster
-            np.abs((-reward['target'] ** 2 - reward['score'] ** 2) * 
-            np.sqrt(step_dist * reward['step'])
-        )) // (1 + tar_delta)
+            np.abs((-reward['target'] ** 2 - reward['score'])) * 
+            np.sqrt(step_dist * reward['step'])) // (1 + tar_delta)
 
-        gap_dist = b['mid'] - gap['mid']
-        print('gap: {} | y: {} | x: {}'.\
-            format(gap_dist, b['mid'], gap['mid']))
-
-        award = tar_dist * gap_dist # base reward scales w/ dist/score
         if reward['step'] < 50:
-            mul_penalty = (1 + tar_delta)
+            mul_penalty = np.sqrt(tar_delta)
         else: mul_penalty = 1
         self.msg = 'Danger zone!'
-        award = (gap_dist ** 4) / mul_penalty
+
+        award = (tar_dist ** 4) / mul_penalty  # base reward scales w/ dist/score
         if reward['step'] > 49:
-            award += ((1 + tar_dist) ** (1 + gap_dist) ** 2) / (1 + tar_delta)
+            award += 1
         else: award = award / ((1 + tar_delta) * mul_penalty)
         if reward['terminal']:
             award = -100
             self.msg = 'Boom!'
         elif reward['scored']:    # multiplier for scoring
             award += (
-                ((1 + tar_dist ** 2) ** (1 + gap_dist ** 2)) * 2 )
+                np.sqrt((1 + tar_dist ** 2) * (1 + step_dist ** 2)))
             self.msg = 'You scored!'
-        elif gap_x and gap_y:  # player within pipe gap
-            award += (
-                tar_dist * step_dist // (1 + gap_dist * (1 + tar_delta ** 2))
-            )
-            self.msg = 'Great!'
-        elif (u1 and l1) or (u2 and l2) or (u3 and l3):
-            award += (np.sqrt(tar_dist + gap_dist) // tar_delta) * 10
-            self.msg = 'Safe zone!!'
+
+        #print('step: {} | tar: {} | delta: {}'.format(step_dist, tar_dist, tar_delta))
 
         '''Scale and constrain reward values, save as step reward'''
         '''---Hyperbolic Tangent of Reward---'''
-        award = np.tanh(award * .000001)
+        award = np.tanh(award * .00001)
         return award
 
     def process_action(self, action, nb_actions):

@@ -1,13 +1,13 @@
 import sys
 sys.path.append('../')
-sys.path.append('../game')
-sys.path.append('../saved')
-sys.path.append('../images')
+sys.path.append('/game')
+sys.path.append('/saved')
+sys.path.append('/images')
 sys.path.append('/logs')
+
 
 '---Python Extension Modules'
 import gc
-import os
 import cv2
 import csv
 import math
@@ -28,7 +28,7 @@ from flappy_util import Utility
 from flappy_inputs import Inputs
 from flappy_processor import FlappyProcessor
 from flappy_callback import FlappySession
-import game.flappy as flappy
+from game.flappy import Environment
 
 '---Keras / Tensorflow Modules'
 import tensorflow as tf
@@ -98,6 +98,9 @@ References:
 
 '''Your mission, should you choose to accept it...'''
 
+gpu = '/job:localhost/replica:0/task:0/device:GPU:0'
+cpu = '/job:localhost/replica:0/task:0/device:CPU:0'
+
 class Buffer(SequentialMemory):
     def __init__(self, 
                  limit=50000,
@@ -108,22 +111,66 @@ class Buffer(SequentialMemory):
             window_length=window_length
         )
 
-class DeepQ:
+class NeuralNet:
     def __init__(self,
+                 sess,
                  S=4,
                  A=2,
                  H=64,
                  lr=0.01,
                  batch_size=32,
-                 model='custom'):
-        super(DeepQ, self).__init__()
+                 name='custom',
+                 dueling_network=True,
+                 dueling_type='max'):
+        super(NeuralNet, self).__init__()
+        #if name == 'vgg16':
+        #    self.nn = VGG16()
+        #if name == 'resnet50':
+        #    self.nn = ResNet50()
+        K.set_session(sess)
         self.shape = (S, 80, 80)
-        #self.batch_size = batch_size
-        if model == 'vgg16':
-            self.nn = VGG16()
-        if model == 'resnet50':
-            self.nn = ResNet50()
-        else: self.nn = self._create_model(S, A, H, lr)
+        
+        with tf.device(gpu):
+            inputs, outputs = self._create_model(S, A, H, lr)
+            model = Model(inputs=inputs, outputs=outputs)
+
+        if dueling_network:
+            # get the second last layer of the model, abandon the last layer
+            with tf.device(gpu):
+                layer = model.layers[-2]
+                nb_action = model.output._keras_shape[-1]
+                # layer y has a shape (nb_action+1,)
+                # y[:,0] represents V(s;theta)  y[:,1:] represents A(s,a;theta)
+                y = Dense(nb_action + 1, activation='linear')(layer.output)
+                # dueling_type == 'avg'
+                # Q(s,a;theta) = V(s;theta) + (A(s,a;theta)-Avg_a(A(s,a;theta)))
+
+                # dueling_type == 'max'
+                # Q(s,a;theta) = V(s;theta) + (A(s,a;theta)-max_a(A(s,a;theta)))
+
+                # dueling_type == 'naive'
+                # Q(s,a;theta) = V(s;theta) + A(s,a;theta)
+                if dueling_type == 'avg':
+                    outputs = Lambda(
+                        lambda a: K.expand_dims(a[:, 0], -1) + a[:, 1:] - \
+                                K.mean(a[:, 1:], axis=1, keepdims=True),
+                        output_shape=(nb_action,)
+                    )(y)
+                elif dueling_type == 'max':
+                    outputs = Lambda(
+                        lambda a: K.expand_dims(a[:, 0], -1) + a[:, 1:] - \
+                                K.max(a[:, 1:], axis=1, keepdims=True), 
+                        output_shape=(nb_action,)
+                    )(y)
+                elif dueling_type == 'naive':
+                    outputs = Lambda(
+                        lambda a: K.expand_dims(a[:, 0], -1) + a[:, 1:], 
+                        output_shape=(nb_action,)
+                    )(y)
+                else:
+                    assert False, "dueling_type must be one of {'avg','max','naive'}"
+                    model = Model(inputs=inputs, outputs=outputs)
+        self.nn = model
 
     def get_model(self): return self.nn
 
@@ -139,7 +186,6 @@ class DeepQ:
                    )(inputs)
         x = BatchNormalization()(x)
         x = LeakyReLU(alpha=alpha)(x)
-
         x = Conv2D(filters=H * 2,
                    kernel_size=(4, 4),
                    strides=(2, 2),
@@ -150,8 +196,6 @@ class DeepQ:
                    )(x)
         x = BatchNormalization()(x)
         x = LeakyReLU(alpha=alpha)(x)
-        #x = MaxPool2D()(x)
-
         x = Conv2D(filters=H,
                    kernel_size=(3, 3),
                    strides=(1, 1),
@@ -162,8 +206,6 @@ class DeepQ:
                    )(x)
         x = BatchNormalization()(x)
         x = LeakyReLU(alpha=alpha)(x)
-        #x = MaxPool2D()(x)
-
         x = Flatten()(x)
         x = Dense(256, activation='relu', kernel_regularizer=l2(reg))(x)
         x = Dense(256, activation='relu', kernel_regularizer=l2(reg))(x)
@@ -176,12 +218,13 @@ class DeepQ:
         x = Dense(4, activation='relu', kernel_regularizer=l2(reg))(x)
         x = Dense(A, activation='linear', kernel_regularizer=l2(reg))(x)
 
-        model = Model(inputs=inputs, outputs=x)
-        return model
+        return inputs, x
 
 class BetaFlapDQN(DQNAgent):
-    def __init__(self, inputs, **kwargs):
+    def __init__(self, inputs, buffer, sess_id, sess, **kwargs):
         self.util = Utility()
+        self.sess = sess
+        self.sess_id = sess_id
 
         game = inputs['game']
         agnt = inputs['agent']
@@ -198,10 +241,6 @@ class BetaFlapDQN(DQNAgent):
         self.mode = game['difficulty']
         self.target = game['target']
         self.tick = game['tick']
-
-        '''---Session Parameters---'''
-        self.sess_id = self.util.get_id()
-        self.sess = self.config_session()
         
         '''---Episode Parameters---'''
         self.nb_episodes = sess['max_ep']
@@ -266,33 +305,9 @@ class BetaFlapDQN(DQNAgent):
             self.saves,
             self.env_name
         )
-        self.logs = sv['log_path']  
-        self.log_path =  self.util.get_log_dir_struct(
-            self.sess_id, 
-            self.logs, 
-            self.ftype
-        )
-
-        K.set_session(self.sess)
+        self.logs = sv['log_path']          
         self.util.display_status('Hyperparameters Successfully Loaded')
-
-        self.memory = Buffer(
-            limit=self.limit, 
-            window_length=self.window_length,
-        )
-        self.util.display_status(
-            'Built Replay Buffer Limited to {} States'.format(self.limit)
-        )
-        self.env = flappy.Environment(
-            target_score=self.target,
-            difficulty=self.mode,
-            fps=self.fps,
-            tick=self.tick,
-        )
-        self.util.display_status(
-            '{} Environment Emulation Initialized'.format(self.env_name)
-        )
-
+        
         '''Reference/Excerpt:  keras-rl DQN Atari Example
         https://github.com/keras-rl/keras-rl/blob/master/examples/dqn_atari.py
         # Select a policy. 
@@ -305,74 +320,89 @@ class BetaFlapDQN(DQNAgent):
         # still performs some random actions. 
         # This ensures that the agent cannot get stuck.
         # '''
-        self.policy = LinearAnnealedPolicy(
-            inner_policy=EpsGreedyQPolicy(
-                eps = self.value_max
-            ), 
-            attr='eps', 
-            value_max=self.value_max,
-            value_min=self.value_min, 
-            value_test=self.alpha,
-            nb_steps=self.anneal
-        )
-        #self.policy = MaxBoltzmannQPolicy()
-        self.test_policy = GreedyQPolicy()
-
-        self.util.display_status(
-            'Keras GPU Session {} Beginning'.format(self.sess_id)
-        )
         self.custom_model_objects = {
             'S': self.window_length,
             'A': self.nb_actions,
             'H': self.H,
             'lr': self.lr,
-            'model': self.name,
+            'name': self.name,
+            'batch_size': self.batch_size,
+            'sess': self.sess,
+            #dueling_network=self.enable_dueling_network,
+            #dueling_type=self.dueling_type,
         }
 
-        if mod['optimizer'].lower() == 'adamax':
-            self.optimizer = Adamax(lr=self.lr)
-        elif mod['optimizer'].lower() == 'adadelta':
-            self.optimizer = Adadelta()
-        elif mod['optimizer'].lower() == 'rmsprop':
-            self.optimizer = RMSprop()
-        elif mod['optimizer'].lower() == 'sgd':
-            self.optimizer = SGD(
-                lr=self.lr, 
-                momentum=self.momentum, 
-                decay=self.decay,
+        with tf.device(gpu):
+            self.policy = LinearAnnealedPolicy(
+                inner_policy=EpsGreedyQPolicy(
+                    eps = self.value_max
+                ), 
+                attr='eps', 
+                value_max=self.value_max,
+                value_min=self.value_min, 
+                value_test=self.alpha,
+                nb_steps=self.anneal
+            )
+            self.test_policy = GreedyQPolicy()
+
+            if mod['optimizer'].lower() == 'adamax':
+                self.optimizer = Adamax(lr=self.lr)
+            elif mod['optimizer'].lower() == 'adadelta':
+                self.optimizer = Adadelta()
+            elif mod['optimizer'].lower() == 'rmsprop':
+                self.optimizer = RMSprop()
+            elif mod['optimizer'].lower() == 'sgd':
+                self.optimizer = SGD(
+                    lr=self.lr, 
+                    momentum=self.momentum, 
+                    decay=self.decay,
+            )
+            else: self.optimizer = Adam(lr=self.lr)
+
+        self.memory = buffer
+
+    
+        self.log_path =  self.util.get_log_dir_struct(
+            self.sess_id, 
+            self.logs, 
+            self.ftype
         )
-        else: self.optimizer = Adam(lr=self.lr)
-            
-        deepq = DeepQ(
+
+        self.util.display_status(
+            'Keras GPU Session {} Beginning'.format(self.sess_id)
+        )
+          
+        nn = NeuralNet(
             S=self.window_length,
             A=self.nb_actions,
             H=self.H,
             lr=self.lr,
-            model=self.name,
+            name=self.name,
             batch_size=self.batch_size,
+            dueling_network=self.enable_dueling_network,
+            dueling_type=self.dueling_type,
+            sess=self.sess,
         )
-        self.model = deepq.get_model()
+        with tf.device(gpu):
+            self.model = nn.get_model()
 
         self.util.display_status(
             '{} Keras Agent with {} Optimizer Built'.format(
                 self.name, mod['optimizer']
         ))
+
         '''---Compile the model with chosen optimizer
-           loss is calculated with lamba function based on model
-           type selections (dueling, or double dqn)'''
-        self.compile(   
-            optimizer=self.optimizer,
-            metrics=self.metrics,
-        )
+        loss is calculated with lamba function based on model
+        type selections (dueling, or double dqn)'''
+        with tf.device(gpu):
+            self.compile(   
+                optimizer=self.optimizer,
+                metrics=self.metrics,
+            )
+
         self.util.display_status(
             '{} Agent Fully Initialized with Compiled Model'.format(self.name)
         )
-
-        try:
-            self.load_weights(os.getcwd() + '/saved/FlappyBird_weights.h5')
-            self.util.display_status('Saved Keras Model Weights Loaded')
-        except:
-            self.util.display_status('No Saved Keras Model Weights Found')
 
         super(BetaFlapDQN, self).__init__(
             model=self.model,
@@ -386,20 +416,35 @@ class BetaFlapDQN(DQNAgent):
             **kwargs
         )
 
+    def load_saved_model_weights(self):
+        try:
+            self.model.load_weights('saved/FlappyBird_weights.h5')
+            self.util.display_status('Saved Keras Model Weights Loaded')
+        except:
+            self.util.display_status('No Saved Keras Model Weights Found')
+
     def fit(self, iteration=1, max_iteration=1):
+        self.load_saved_model_weights()
+
+        with tf.device(gpu):
+            self.env = Environment(
+                target_score=self.target,
+                difficulty=self.mode,
+                fps=self.fps,
+                tick=self.tick,
+            )
+        self.util.display_status(
+            '{} Environment Emulation Initialized'.format(self.env_name)
+        )
 
         if self.action_repetition < 1:
             raise ValueError(
                 'action_repetition must be >= 1, is {}'.\
                     format(self.action_repetition)
             )
-
         '''---Define Custom Callbacks and Processors BetaFlap'''
         FlappyCall = FlappySession()
-        Flappy = FlappyProcessor()
-         # save every n steps
-        ckpt = self.save_path + '_weights.h5'
-        
+        Flappy = FlappyProcessor()        
 
         '''---Flag Agent with as Training with on_train_begin()'''
         self._on_train_begin()
@@ -415,6 +460,7 @@ class BetaFlapDQN(DQNAgent):
         self.step = np.int16(0)
         action = np.int16(0)
         self.randQ = np.int16(0)
+        self.reward = np.float16(0)
         idx = np.int16(0)
         flap = False
         episode_reward = None
@@ -481,7 +527,8 @@ class BetaFlapDQN(DQNAgent):
             FlappyCall.on_step_begin(episode_step)
 
             '''---Predict Q Values Using Forward Method'''
-            idx = self.forward(observation)
+            with tf.device(gpu):
+                idx = self.forward(observation)
             action, flap = Flappy.process_action(idx, self.nb_actions)
             #episode_step += 1
             reward = np.float32(0)
@@ -509,9 +556,10 @@ class BetaFlapDQN(DQNAgent):
                 * update model target values
                 * discount future reward and return model metrics
             '''
-            
-            metrics = self.backward(reward, terminal=done) 
+            with tf.device(gpu):
+                metrics = self.backward(reward, terminal=done) 
             episode_reward += reward
+            self.reward = episode_reward
             episode_score = info['score']
             
 
@@ -548,8 +596,9 @@ class BetaFlapDQN(DQNAgent):
             # We are in a terminal state but the agent hasn't yet seen it. 
             # perform one more forward-backward call and ignore the action
             if done:
-                self.forward(observation)
-                self.backward(0., terminal=False)
+                with tf.device(gpu):
+                    self.forward(observation)
+                    self.backward(0., terminal=False)
                 episode_log = {
                     'sess_id': self.sess_id,
                     'episode': episode,
@@ -574,7 +623,7 @@ class BetaFlapDQN(DQNAgent):
                     done = True       # max episode hit
                     break
             
-        '''---Training Session Complete---'''           
+        '''---Training Session Complete---'''   
         self.save_model()
         session_log = {
             'id': self.sess_id,
@@ -594,13 +643,15 @@ class BetaFlapDQN(DQNAgent):
     def forward(self, observation):
         # Select an action
         state = self.memory.get_recent_state(observation)
-        with self.sess.as_default():
+        with tf.device(gpu):
             self.q_values = self.compute_q_values(state)
         
         if self.training:  # LinearAnneal Greedy Epsilon
-            action = self.policy.select_action(q_values=self.q_values)
-        else:              # MaxBoltzmann GreedyQ
-            action = self.test_policy.select_action(q_values=self.q_values)
+            with tf.device(gpu):
+                action = self.policy.select_action(q_values=self.q_values)
+        else:              #  GreedyQ
+            with tf.device(gpu):
+                action = self.test_policy.select_action(q_values=self.q_values)
         # Book-keeping for experience replay
         self.recent_observation = observation
         self.recent_action = action
@@ -608,14 +659,19 @@ class BetaFlapDQN(DQNAgent):
 
     def backward(self, reward, terminal):
         '''Store latest step in experience replay tuple'''
-        if self.step % self.memory_interval == 0:
-            self.memory.append(
-                np.array(self.recent_observation), 
-                np.int16(self.recent_action), 
-                np.float32(reward), 
-                terminal,
-                training=self.training
-            )
+        if self.step % self.memory_interval == 0 or self.reward > .011:
+            if self.reward > .011: 
+                self.util.display_status(
+                    'Step {} Replay Experience Memory Saved'.format(self.step)
+                )
+            with tf.device(cpu):
+                self.memory.append(
+                        np.array(self.recent_observation), 
+                        np.int16(self.recent_action), 
+                        np.float32(reward), 
+                        terminal,
+                        training=self.training
+                )
         metrics = []
         if not self.training:
             return metrics
@@ -623,8 +679,9 @@ class BetaFlapDQN(DQNAgent):
         '''Begin Training on Batches of Stored Experiences'''
         if self.step > self.nb_steps_warmup \
         and self.step % self.train_interval == 0:
-            batch = self.memory.sample(self.batch_size)
-            assert len(batch) == self.batch_size
+            with tf.device(gpu):
+                batch = self.memory.sample(self.batch_size)
+                assert len(batch) == self.batch_size
             
             state0_batch, reward_batch,action_batch, terminal1_batch, \
             state1_batch = \
@@ -642,18 +699,16 @@ class BetaFlapDQN(DQNAgent):
                 - target network estimates Q values.
             '''
             if self.enable_double_dqn:
-                with self.sess.as_default():
-                    with tf.device('/GPU:0'):
-                        q_values = self.model.predict_on_batch(state1_batch)
+                with tf.device(gpu):
+                    q_values = self.model.predict_on_batch(state1_batch)
                 assert q_values.shape == (self.batch_size, self.nb_actions)
                 actions = np.argmax(q_values, axis=1)
                 assert actions.shape == (self.batch_size,)
                 # estimate Q values using the target network 
                 # select maxQ value with the online model (computed above)
-                with self.sess.as_default():
-                    with tf.device('/GPU:0'):
-                        target_q_values = \
-                        self.target_model.predict_on_batch(state1_batch)
+                with tf.device(gpu):
+                    target_q_values = \
+                    self.target_model.predict_on_batch(state1_batch)
 
                 assert target_q_values.shape == \
                     (self.batch_size, self.nb_actions)
@@ -662,10 +717,9 @@ class BetaFlapDQN(DQNAgent):
             # prediction done on target_model as outlined in Mnih (2015),
             # it makes the algorithm is significantly more stable
             else:
-                with self.sess.as_default():
-                    with tf.device('/GPU:0'):
-                        target_q_values = \
-                        self.target_model.predict_on_batch(state1_batch)
+                with tf.device(gpu):
+                    target_q_values = \
+                    self.target_model.predict_on_batch(state1_batch)
 
                 assert target_q_values.shape == \
                     (self.batch_size, self.nb_actions)
@@ -704,21 +758,22 @@ class BetaFlapDQN(DQNAgent):
                 split = self.split
             else: split = 0
 
-            with self.sess.as_default():
-                with tf.device('/GPU:0'):
-                    # THIS CAUSES A MEMORY LEAK IN CURRENT CONFIGURATION
-                    #metrics = self.trainable_model.fit(
-                    #    ins + [targets, masks], 
-                    #    [dummy_targets, targets],
-                    #    batch_size=self.batch_size,
-                    #    epochs=self.epochs,
-                    #    verbose=self.verbose,
-                    #    validation_split=split,
-                    #shuffle=self.shuffle,
-                    #)
-                    #gc.collect()
-                    metrics = self.trainable_model.train_on_batch(
-                        ins + [targets, masks], [dummy_targets, targets])
+            with tf.device(gpu):
+                metrics = self.trainable_model.train_on_batch(
+                    ins + [targets, masks], [dummy_targets, targets]
+                )
+                # THIS CAUSES A MEMORY LEAK IN CURRENT CONFIGURATION
+                #metrics = self.trainable_model.fit(
+                #    ins + [targets, masks], 
+                #    [dummy_targets, targets],
+                #    batch_size=None,
+                #    epochs=self.epochs,
+                #    verbose=self.verbose,
+                #    validation_split=split,
+                #    shuffle=self.shuffle
+                #)
+                gc.collect()
+                
             # throw away individual losses
             if type(metrics) is list: 
                 [m for idx, m in enumerate(metrics) if idx not in (1, 2)]
@@ -727,22 +782,9 @@ class BetaFlapDQN(DQNAgent):
 
         if self.target_model_update >= 1 \
         and self.step % self.target_model_update == 0:
-            self.update_target_model_hard()
+            with tf.device(gpu):
+                self.update_target_model_hard()
         return metrics
-    
-    def config_session(self):
-        config = ConfigProto(
-            #device_count = {'CPU': 1},
-            inter_op_parallelism_threads=1,
-            intra_op_parallelism_threads=1,
-        )
-        config.gpu_options.allow_growth = True
-        #config.gpu_options.per_process_gpu_memory_fraction = 0.9
-
-        with tf.device('/GPU:0'):
-            graph = tf.get_default_graph()
-        sess = Session(config=config, graph=graph)
-        return sess
     
     
     def save_model(self):
