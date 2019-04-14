@@ -60,8 +60,6 @@ def render(mode='human'):
 class Environment:
     def __init__(self, target_score = 40, difficulty = 'hard', fps = 30, tick =  2):
         '''---Initialize New Game---'''        
-        render()
-        
         self.name = 'FlappyBird'
         self.icon = pygame.image.load('game/flappy.ico')
         self.width = SCREEN_W
@@ -159,8 +157,6 @@ class Environment:
         if sum(action) != 1:          # validate action
             raise ValueError('Invalid action state!')
 
-        print('Working!')
-
         if action[1] == 1:
             if self.playery > -2 * PLAYER_H:
                 self.playerVelY = self.playerFlapAcc
@@ -231,30 +227,18 @@ class Environment:
             SCREEN.blit(IMAGES['pipe'][0], 
                        (uPipe['x'], 
                         uPipe['y'],
-                        uPipe['x_mid'],
-                        uPipe['y_mid'],
-                        uPipe['corners']))
+                        ))
             SCREEN.blit(IMAGES['pipe'][1], 
                        (lPipe['x'], 
                         lPipe['y'],
-                        lPipe['x_mid'],
-                        lPipe['y_mid'],
-                        lPipe['corners']))
-
-        #SCREEN.blit(self.gap_loc,
-        #            self.gap_loc['gapY1'],
-        #            self.gap_loc['gapY2'])
+                        ))
 
         SCREEN.blit(IMAGES['base'], 
                     (self.basex, BASE_Y))
 
         SCREEN.blit(IMAGES['player'][self.playerIndex], 
                     (self.playerx, 
-                    self.playerx_mid, 
                     self.playery,
-                    self.playery_mid,
-                    self.player_right,
-                    self.player_btm
                     ))
 
         '''---Preserve frame image data to pass into neural network---'''
@@ -263,9 +247,6 @@ class Environment:
         '''---Progress to the next step---'''
         pygame.display.update()
         FPSCLOCK.tick(self.fps * self.tick)  # speed up play
-
-        for gap in self.gap_loc:
-            gap['mid'] = (self.upperPipes[0]['x_mid'], gap['y_mid'])
 
         out = {
             'status': status,
@@ -330,10 +311,6 @@ class Environment:
             'y_btm': gapY + self.pipe_gap }
 
         return pipe_n, gap_n
-
-    def draw_polygon(self):
-
-    
     
     def is_crash(self):
         '''returns True if player collides with base or pipes'''
